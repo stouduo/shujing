@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import { NButton, NDropdown, NInput, NModal, useMessage, type DropdownOption } from 'naive-ui'
 import { useColumnLayout } from '../composables/useColumnLayout'
+import { useVirtualScroll } from '../composables/useVirtualScroll'
+import { useCellEditing } from '../composables/useCellEditing'
 import type { OrderDir } from '../types'
 
 const props = defineProps<{
@@ -59,6 +61,15 @@ const W_NUM = 46
 const W_DEL = 34
 const W_CHK = 30
 
+// ── 虚拟滚动 ────────────────────────────────────────
+const vscroll = useVirtualScroll({ rowCount: computed(() => props.rows.length), rowHeight: 28 })
+const { scroller, start, end } = vscroll
+const visible = computed(() => props.rows.slice(start.value, end.value))
+function onScroll() {
+  commitEdit()
+  vscroll.onScroll()
+}
+
 const showNum = computed(() => props.editable && !hideRowNumLocal.value)
 const fixedBase = computed(() =>
   (showNum.value ? W_NUM : 0) + (props.editable ? W_CHK + W_DEL : 0),
@@ -105,36 +116,6 @@ const {
 } = layout
 const hideRowNumLocal = hideRowNumRef
 
-const scroller = ref<HTMLElement | null>(null)
-const scrollTop = ref(0)
-const viewH = ref(400)
-
-function measure() {
-  const el = scroller.value
-  if (!el) return
-  scrollTop.value = el.scrollTop
-  viewH.value = el.clientHeight
-}
-
-function onScroll() {
-  commitEdit()
-  measure()
-}
-
-onMounted(() => {
-  measure()
-  window.addEventListener('resize', measure)
-})
-onUnmounted(() => {
-  window.removeEventListener('resize', measure)
-})
-
-
-const start = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW_H.value) - 4))
-const end = computed(() =>
-  Math.min(props.rows.length, start.value + Math.ceil(viewH.value / ROW_H.value) + 8),
-)
-const visible = computed(() => props.rows.slice(start.value, end.value))
 
 const NUM_RE = /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/
 function isNum(v: string | null): boolean {
@@ -147,10 +128,6 @@ function sortIcon(col: string): string {
 }
 
 // ── 单元格编辑 ────────────────────────────────────────
-const editCell = ref<{ r: number; c: number } | null>(null)
-const editNew = ref<{ ni: number; c: number } | null>(null)
-const draft = ref('')
-
 function pendingValue(r: number, c: number): string | null | undefined {
   const row = props.changes?.[r]
   if (!row) return undefined
@@ -180,17 +157,23 @@ function newCellValue(ni: number, c: number): string {
 
 const fkOpts = ref<{ col: string; opts: string[] } | null>(null)
 
+const editing = useCellEditing({
+  columns: () => props.columns,
+  colOrder: () => colOrder.value,
+  displayValue: (r: number, c: number) => displayValue(r, c),
+  onCommit: (r: number, col: string, v: string | null) => emit('cell-change', r, col, v),
+  onInsertCommit: (ni: number, col: string, v: string) => emit('insert-change', ni, col, v),
+  newCellValue: (ni: number, c: number) => newCellValue(ni, c),
+})
+const { editCell, editNew, draft, startEditNew, commitEdit, cancelEdit, moveEdit } = editing
+
+// 包装:保留 FK 候选加载
 async function startEdit(r: number, c: number) {
   if (!props.editable || rowDeleted(r)) return
-  const col = props.columns[c]
-  if (!col) return
-  const v = displayValue(r, c)
-  draft.value = v === null ? '' : v
-  editNew.value = null
-  editCell.value = { r, c }
-  // 外键列:加载候选值供 datalist 提示
+  editing.startEdit(r, c)
   fkOpts.value = null
   if (props.fkLoader) {
+    const col = props.columns[c]
     const opts = await props.fkLoader(col)
     if (editCell.value?.r === r && editCell.value?.c === c && opts.length) {
       fkOpts.value = { col, opts }
@@ -198,55 +181,11 @@ async function startEdit(r: number, c: number) {
   }
 }
 
-function startEditNew(ni: number, c: number) {
-  if (!props.editable) return
-  draft.value = newCellValue(ni, c)
-  editCell.value = null
-  editNew.value = { ni, c }
-}
-
 function focusEditEl(el: Element | unknown) {
   if (el instanceof HTMLInputElement) el.focus()
 }
 
-function commitEdit() {
-  if (editNew.value) {
-    const { ni, c } = editNew.value
-    editNew.value = null
-    const col = props.columns[c]
-    if (col) emit('insert-change', ni, col, draft.value)
-    return
-  }
-  const ec = editCell.value
-  if (!ec) return
-  editCell.value = null
-  const col = props.columns[ec.c]
-  const cur = displayValue(ec.r, ec.c)
-  const v = draft.value === '' ? null : draft.value
-  if (v !== cur && col) emit('cell-change', ec.r, col, v)
-}
-
-function cancelEdit() {
-  editCell.value = null
-  editNew.value = null
-}
-
 /** Tab/Shift+Tab:提交当前并打开同行相邻可见列编辑 */
-function moveEdit(dir: number) {
-  const ec = editCell.value ?? editNew.value
-  if (!ec) return
-  const isOld = !!editCell.value
-  const r = isOld ? editCell.value!.r : editNew.value!.ni
-  const cur = isOld ? editCell.value!.c : editNew.value!.c
-  commitEdit()
-  const order = colOrder.value
-  const pos = order.indexOf(cur)
-  const nextIdx = order[pos + dir]
-  if (nextIdx === undefined) return
-  if (isOld) startEdit(r, nextIdx)
-  else startEditNew(r, nextIdx)
-}
-
 // ── 多行文本编辑 ──────────────────────────────────────
 const mlEdit = ref<{ r: number; c: number } | null>(null)
 const mlDraft = ref('')
