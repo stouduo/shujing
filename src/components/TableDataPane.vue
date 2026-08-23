@@ -161,7 +161,7 @@ async function loadDistinct(col: string): Promise<string[]> {
   const conn = store.connById(props.tab.connId)
   if (!conn) return []
   try {
-    const { quoteIdent: q } = await import('../stores/app')
+    const { quoteIdent: q } = await import('../stores/helpers')
     const rs = await api.runSql(
       props.tab.connId,
       `SELECT DISTINCT ${q(col, conn.dbType)} FROM ${q(props.tab.table, conn.dbType)} WHERE ${q(col, conn.dbType)} IS NOT NULL LIMIT 300`,
@@ -196,7 +196,7 @@ async function loadFkOptions(col: string): Promise<string[]> {
   const conn = store.connById(props.tab.connId)
   if (!conn) return []
   try {
-    const { quoteIdent: q } = await import('../stores/app')
+    const { quoteIdent: q } = await import('../stores/helpers')
     const rs = await api.runSql(
       props.tab.connId,
       `SELECT DISTINCT ${q(fk.refColumn, conn.dbType)} FROM ${q(fk.refTable, conn.dbType)} LIMIT 500`,

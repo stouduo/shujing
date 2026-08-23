@@ -1,17 +1,14 @@
 import { defineStore } from 'pinia'
 import * as api from '../api'
 import { reviveTab, serializeTab } from '../panes/registry'
+import { tableActions } from './tableActions'
+import { quoteIdent } from './helpers'
 import type { ColumnSpec, ConnInfo, DbType, TableMeta, TableTab, Tab } from '../types'
 
 interface LiveState {
   tables: TableMeta[]
   loading: boolean
   version: string
-}
-
-export function quoteIdent(name: string, dbType: DbType): string {
-  const q = dbType === 'mysql' ? '`' : '"'
-  return q + name.split(q).join(q + q) + q
 }
 
 function dbTypeOf(conn: ConnInfo | undefined, fallback: DbType = 'mysql'): DbType {
@@ -56,6 +53,7 @@ export const useAppStore = defineStore('app', {
     },
   },
   actions: {
+    ...tableActions,
     async init() {
       try {
         this.history = JSON.parse(localStorage.getItem('dblens_history') ?? '[]')
@@ -352,25 +350,6 @@ export const useAppStore = defineStore('app', {
       this.tableCols[`${connId}/${table}`] = columns
     },
 
-    /** 拉取主键列与外键(决定可编辑性 + FK 候选值) */
-    async loadPkCols(id: string) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table' || !tab.connId) return
-      if (!this.live[tab.connId]) await this.connect(tab.connId)
-      if (!this.live[tab.connId]) return
-      try {
-        const st = await api.getTableStructure(tab.connId, tab.table)
-        tab.pkCols = st.columns.filter((c) => c.key === 'PRI').map((c) => c.name)
-        this.rememberCols(tab.connId, tab.table, st.columns.map((c) => c.name))
-      } catch {
-        tab.pkCols = []
-      }
-      try {
-        tab.fks = await api.listForeignKeys(tab.connId)
-      } catch {
-        tab.fks = []
-      }
-    },
 
     async openStructure(connId: string, table: string) {
       const id = this.nextId()
@@ -904,127 +883,12 @@ export const useAppStore = defineStore('app', {
 
     // ── 表数据分页浏览 ──────────────────────────────────
 
-    whereOf(tab: TableTab): string {
-      // 自由模式:直接拼 WHERE 片段
-      const free = tab.freeWhere?.trim()
-      if (tab.filterMode === 'free') return free ? ` WHERE ${free}` : ''
-      const conn = this.connById(tab.connId ?? '')
-      const dbType = dbTypeOf(conn)
-      const conds = tab.filters
-        .filter((f) => f.column && (f.value !== '' || f.op.includes('NULL')))
-        .map((f) => {
-          const col = quoteIdent(f.column, dbType)
-          if (f.op === 'IS NULL' || f.op === 'IS NOT NULL') return `${col} ${f.op}`
-          const v = f.value
-          const lit = /^-?\d+(\.\d+)?$/.test(v) ? v : `'${v.replace(/'/g, "''")}'`
-          return `${col} ${f.op} ${lit}`
-        })
-      return conds.length ? ` WHERE ${conds.join(' AND ')}` : ''
-    },
 
-    tablePageSql(tab: TableTab): string {
-      const conn = this.connById(tab.connId ?? '')
-      const dbType = dbTypeOf(conn)
-      let sql = `SELECT * FROM ${quoteIdent(tab.table, dbType)}${this.whereOf(tab)}`
-      if (tab.orderKey) {
-        sql += ` ORDER BY ${quoteIdent(tab.orderKey, dbType)} ${tab.orderDir === 'asc' ? 'ASC' : 'DESC'}`
-      }
-      sql += ` LIMIT ${tab.pageSize} OFFSET ${(tab.page - 1) * tab.pageSize}`
-      return sql
-    },
 
-    async loadTableData(id: string, keepTotal = true) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table' || !tab.connId) return
-      const seq = (tab.loadSeq = (tab.loadSeq ?? 0) + 1)
-      if (!this.live[tab.connId]) await this.connect(tab.connId)
-      if (!this.live[tab.connId]) {
-        if (seq === tab.loadSeq) {
-          tab.error = '连接不可用'
-          tab.loading = false
-        }
-        return
-      }
-      tab.loading = true
-      tab.error = null
-      // 翻页/刷新后旧变更不再对应行,清空(保存流程单独处理)
-      tab.changes = {}
-      tab.deletedRows = {}
-      tab.newRows = []
-      try {
-        const results = await api.runSql(tab.connId, this.tablePageSql(tab), tab.pageSize)
-        if (seq !== tab.loadSeq) return // 已有更新的请求,丢弃过期结果
-        tab.result = results[0] ?? null
-        if (!keepTotal) tab.total = null
-      } catch (e) {
-        if (seq !== tab.loadSeq) return
-        tab.result = null
-        tab.error = String(e)
-      } finally {
-        if (seq === tab.loadSeq) tab.loading = false
-      }
-    },
 
-    async loadTableCount(id: string) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table' || !tab.connId) return
-      if (!this.live[tab.connId]) await this.connect(tab.connId)
-      if (!this.live[tab.connId]) return
-      try {
-        const conn = this.connById(tab.connId)
-        const dbType = dbTypeOf(conn)
-        const rs = await api.runSql(
-          tab.connId,
-          `SELECT COUNT(*) FROM ${quoteIdent(tab.table, dbType)}${this.whereOf(tab)}`,
-          1,
-        )
-        tab.total = Number(rs[0]?.rows[0]?.[0] ?? 0)
-      } catch {
-        tab.total = null
-      }
-    },
 
-    async setTablePage(id: string, page: number) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table') return
-      tab.page = Math.max(1, page)
-      await this.loadTableData(id)
-    },
 
-    async setTablePageSize(id: string, size: number) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table') return
-      tab.pageSize = size
-      tab.page = 1
-      await this.loadTableData(id)
-    },
 
-    async sortTable(id: string, col: string, dir?: 'asc' | 'desc' | null) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table') return
-      if (dir !== undefined) {
-        // 菜单显式指定方向(null = 取消)
-        if (dir === null) {
-          tab.orderKey = null
-          tab.orderDir = 'asc'
-        } else {
-          tab.orderKey = col
-          tab.orderDir = dir
-        }
-      } else if (tab.orderKey === col) {
-        if (tab.orderDir === 'asc') tab.orderDir = 'desc'
-        else {
-          // 再点一次取消排序
-          tab.orderKey = null
-          tab.orderDir = 'asc'
-        }
-      } else {
-        tab.orderKey = col
-        tab.orderDir = 'asc'
-      }
-      tab.page = 1
-      await this.loadTableData(id)
-    },
 
     // ── 勾选与复制行 ────────────────────────────────────
 
@@ -1083,36 +947,6 @@ export const useAppStore = defineStore('app', {
       }
     },
 
-    // ── 表数据筛选 ─────────────────────────────────────
-
-    addFilter(id: string) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table') return
-      const col = tab.result?.columns[0] ?? ''
-      tab.filters.push({ column: col, op: '=', value: '' })
-    },
-
-    removeFilter(id: string, idx: number) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table') return
-      tab.filters.splice(idx, 1)
-      this.applyFilters(id)
-    },
-
-    clearFilters(id: string) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table') return
-      tab.filters = []
-      this.applyFilters(id)
-    },
-
-    async applyFilters(id: string) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'table') return
-      tab.page = 1
-      await this.loadTableData(id)
-      await this.loadTableCount(id)
-    },
 
     // ── 数据编辑(Navicat 式回写) ─────────────────────
 
