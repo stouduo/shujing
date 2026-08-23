@@ -281,7 +281,7 @@ function onFilterCol(col: string, op = '=') {
           </template>
           <div class="col-picker">
             <div class="cp-item" @click="gridRef?.toggleRowNum()">
-              <span class="cp-mark">{{ gridRef?.hideRowNumLocal ? '○' : '✓' }}</span># 行号
+              <span class="cp-mark">{{ gridRef?.hideRowNum ? '○' : '✓' }}</span># 行号
             </div>
             <div
               v-for="c in tab.result?.columns ?? []"
@@ -289,9 +289,9 @@ function onFilterCol(col: string, op = '=') {
               class="cp-item mono"
               @click="gridRef?.toggleCol(c)"
             >
-              <span class="cp-mark">{{ gridRef?.hiddenColsLocal?.includes(c) ? '○' : '✓' }}</span>{{ c }}
+              <span class="cp-mark">{{ gridRef?.hiddenCols?.includes(c) ? '○' : '✓' }}</span>{{ c }}
             </div>
-            <div class="cp-all" @click="gridRef?.showAllCols()">全部显示</div>
+            <div class="cp-all" @click="gridRef?.showAll()">全部显示</div>
           </div>
         </n-popover>
         <n-button size="small" quaternary :loading="exporting" title="整表导出为 SQL INSERT 文件" @click="exportSql">

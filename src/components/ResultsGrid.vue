@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
 import { NButton, NDropdown, NInput, NModal, useMessage, type DropdownOption } from 'naive-ui'
+import { useColumnLayout } from '../composables/useColumnLayout'
 import type { OrderDir } from '../types'
 
 const props = defineProps<{
@@ -58,15 +59,51 @@ const W_NUM = 46
 const W_DEL = 34
 const W_CHK = 30
 
-const hiddenColsLocal = ref<string[]>(props.hiddenCols ?? [])
-const hideRowNumLocal = ref(!!props.hideRowNum)
-const visibleCols = computed(() =>
-  props.columns.map((_, i) => i).filter((i) => !hiddenColsLocal.value.includes(props.columns[i])),
-)
 const showNum = computed(() => props.editable && !hideRowNumLocal.value)
 const fixedBase = computed(() =>
   (showNum.value ? W_NUM : 0) + (props.editable ? W_CHK + W_DEL : 0),
 )
+
+// ── 列宽拖拽 ──────────────────────────────────────────
+const resizing = ref<{ col: number; startX: number; startW: number } | null>(null)
+
+function startResize(e: PointerEvent, i: number) {
+  e.stopPropagation()
+  e.preventDefault()
+  resizing.value = { col: i, startX: e.clientX, startW: widths.value[i] }
+  ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+}
+
+function onResizeMove(e: PointerEvent) {
+  const r = resizing.value
+  if (!r) return
+  setWidth(r.col, r.startW + e.clientX - r.startX)
+}
+
+function endResize() {
+  resizing.value = null
+}
+
+// ── 列布局(宽度/固定/隐藏/持久化)抽自 useColumnLayout ──
+const layout = useColumnLayout({
+  columns: toRef(props, 'columns'),
+  rows: toRef(props, 'rows'),
+  fixedBase,
+  persistKey: toRef(props, 'colWidthKey'),
+})
+const {
+  pinned,
+  hidden: hiddenCols,
+  hideRowNum: hideRowNumRef,
+  widths,
+  colOrder,
+  pinnedLeft,
+  totalW,
+  setWidth,
+  togglePin,
+  showAll: showAllColsBase,
+} = layout
+const hideRowNumLocal = hideRowNumRef
 
 const scroller = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
@@ -92,128 +129,6 @@ onUnmounted(() => {
   window.removeEventListener('resize', measure)
 })
 
-
-// 固定列(列名,按固定顺序),渲染在行号/删除列之后、普通列之前
-const pinned = ref<string[]>([])
-
-// 列布局状态:列宽 / 固定列 / 隐藏列 / 行号开关,按表持久化
-const userWidths = ref<Record<number, number>>({})
-
-interface ColLayout {
-  widths: Record<number, number>
-  pinned: string[]
-  hidden: string[]
-  hideRowNum?: boolean
-}
-
-function layoutKey(): string {
-  return props.colWidthKey ? `dblens_colw:${props.colWidthKey}` : ''
-}
-
-onMounted(() => {
-  const k = layoutKey()
-  if (!k) return
-  try {
-    const saved = localStorage.getItem(k)
-    if (!saved) return
-    const d = JSON.parse(saved) as ColLayout
-    userWidths.value = d.widths ?? {}
-    pinned.value = d.pinned ?? []
-    hiddenColsLocal.value = d.hidden ?? []
-    hideRowNumLocal.value = !!d.hideRowNum
-  } catch {
-    /* 忽略 */
-  }
-})
-
-function saveLayout() {
-  const k = layoutKey()
-  if (!k) return
-  const d: ColLayout = {
-    widths: userWidths.value,
-    pinned: pinned.value,
-    hidden: hiddenColsLocal.value,
-    hideRowNum: hideRowNumLocal.value,
-  }
-  try {
-    localStorage.setItem(k, JSON.stringify(d))
-  } catch {
-    /* 忽略 */
-  }
-}
-
-watch([userWidths, pinned, hiddenColsLocal, () => hideRowNumLocal.value], saveLayout, { deep: true })
-
-/** 渲染顺序:固定列在前(保持固定顺序),其余列原序 */
-const colOrderAll = computed<number[]>(() => {
-  const pinSet = new Set(pinned.value)
-  const pinIdx: number[] = []
-  const rest: number[] = []
-  props.columns.forEach((c, i) => (pinSet.has(c) ? pinIdx.push(i) : rest.push(i)))
-  return [...pinIdx, ...rest]
-})
-
-/** 渲染顺序 = 固定列在前,再滤掉隐藏列 */
-const colOrder = computed<number[]>(() => colOrderAll.value.filter((i) => visibleCols.value.includes(i)))
-
-/** 固定列的 sticky left 偏移(行号+删除列之后依次累加) */
-const pinnedLeft = computed<Record<string, number>>(() => {
-  const m: Record<string, number> = {}
-  let x = fixedBase.value
-  for (const name of pinned.value) {
-    const i = props.columns.indexOf(name)
-    if (i >= 0) {
-      m[name] = x
-      x += widths.value[i]
-    }
-  }
-  return m
-})
-
-function togglePin(col: string) {
-  pinned.value = pinned.value.includes(col)
-    ? pinned.value.filter((c) => c !== col)
-    : [...pinned.value, col]
-}
-
-// 依据表头与前 60 行内容估算列宽
-const widths = computed(() =>
-  props.columns.map((c, i) => {
-    if (userWidths.value[i]) return userWidths.value[i]
-    let max = c.length
-    const n = Math.min(props.rows.length, 60)
-    for (let r = 0; r < n; r++) {
-      const v = props.rows[r]?.[i]
-      if (v && v.length > max) max = v.length
-    }
-    return Math.min(360, Math.max(90, Math.ceil(max * 7.3) + 30))
-  }),
-)
-
-// ── 列宽拖拽 ──────────────────────────────────────────
-const resizing = ref<{ col: number; startX: number; startW: number } | null>(null)
-
-function startResize(e: PointerEvent, i: number) {
-  e.stopPropagation()
-  e.preventDefault()
-  resizing.value = { col: i, startX: e.clientX, startW: widths.value[i] }
-  ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
-}
-
-function onResizeMove(e: PointerEvent) {
-  const r = resizing.value
-  if (!r) return
-  userWidths.value = {
-    ...userWidths.value,
-    [r.col]: Math.max(60, Math.min(760, r.startW + e.clientX - r.startX)),
-  }
-}
-
-function endResize() {
-  resizing.value = null
-}
-
-const totalW = computed(() => widths.value.reduce((a, b) => a + b, 0) + fixedBase.value)
 
 const start = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW_H.value) - 4))
 const end = computed(() =>
@@ -609,23 +524,15 @@ async function onCtxSelect(key: string | number) {
   }
 }
 
-// 暴露列布局控制(供父组件列选择器调用)
-function toggleColExternal(c: string) {
-  hiddenColsLocal.value = hiddenColsLocal.value.includes(c)
-    ? hiddenColsLocal.value.filter((x) => x !== c)
-    : [...hiddenColsLocal.value, c]
-}
-
-function showAllColsExternal() {
-  hiddenColsLocal.value = []
-  hideRowNumLocal.value = false
-}
-
 defineExpose({
-  toggleCol: toggleColExternal,
-  showAllCols: showAllColsExternal,
+  toggleCol: (c: string) => {
+    hiddenCols.value = hiddenCols.value.includes(c)
+      ? hiddenCols.value.filter((x) => x !== c)
+      : [...hiddenCols.value, c]
+  },
+  showAll: showAllColsBase,
   toggleRowNum: () => (hideRowNumLocal.value = !hideRowNumLocal.value),
-  hiddenColsLocal,
+  hiddenCols,
   hideRowNumLocal,
 })
 
