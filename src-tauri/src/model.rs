@@ -1,0 +1,147 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DbType {
+    Sqlite,
+    MySql,
+    Postgres,
+    Redis,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnInfo {
+    pub id: String,
+    pub name: String,
+    pub db_type: DbType,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+    pub database: Option<String>,
+    pub file_path: Option<String>,
+    /// 侧栏标识色(连接着色)
+    #[serde(default)]
+    pub color: Option<String>,
+    /// 只读模式:后端强制只放行查询语句
+    #[serde(default)]
+    pub read_only: bool,
+}
+
+/// Redis 只读连接的写命令黑名单
+pub fn is_readonly_redis(cmd: &str) -> bool {
+    const WRITE_PREFIXES: &[&str] = &[
+        "SET", "DEL", "UNLINK", "EXPIRE", "PERSIST", "RENAME", "APPEND", "INCR", "DECR",
+        "LPUSH", "RPUSH", "LPOP", "RPOP", "LSET", "LTRIM", "SADD", "SREM", "HSET", "HDEL",
+        "ZADD", "ZREM", "FLUSHDB", "FLUSHALL", "MSET", "GETSET", "SETEX", "SELECT",
+    ];
+    let head = cmd.trim_start().split_whitespace().next().unwrap_or_default().to_ascii_uppercase();
+    !WRITE_PREFIXES.contains(&head.as_str())
+}
+
+/// 只读连接允许执行的语句前缀白名单
+pub fn is_readonly_sql(sql: &str) -> bool {
+    let head = sql.trim_start().get(..8).unwrap_or_default().to_ascii_uppercase();
+    head.starts_with("SELECT")
+        || head.starts_with("WITH")
+        || head.starts_with("EXPLAIN")
+        || head.starts_with("SHOW")
+        || head.starts_with("DESCRIBE")
+        || head.starts_with("DESC")
+        || head.starts_with("PRAGMA")
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableMeta {
+    pub name: String,
+    /// table | view
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnDef {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+    /// PRI / UNI / MUL / ""
+    pub key: String,
+    pub default: Option<String>,
+    pub extra: String,
+    pub comment: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexDef {
+    pub name: String,
+    pub columns: String,
+    pub unique: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TableStructure {
+    pub columns: Vec<ColumnDef>,
+    pub indexes: Vec<IndexDef>,
+    pub ddl: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecResult {
+    /// 为空表示非查询语句(INSERT/UPDATE/...)
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Option<String>>>,
+    pub affected: u64,
+    pub truncated: bool,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectResult {
+    pub version: String,
+}
+
+pub enum Backend {
+    Sqlite(rusqlite::Connection),
+    MySql(mysql_async::Conn),
+    Pg(tokio_postgres::Client),
+    Redis(redis::Client),
+}
+
+pub struct LiveConn {
+    pub info: ConnInfo,
+    pub backend: Backend,
+}
+
+#[derive(Default)]
+pub struct AppState {
+    conns: Mutex<HashMap<String, Arc<tokio::sync::Mutex<LiveConn>>>>,
+}
+
+impl AppState {
+    pub fn insert(&self, conn: LiveConn) {
+        self.conns
+            .lock()
+            .unwrap()
+            .insert(conn.info.id.clone(), Arc::new(tokio::sync::Mutex::new(conn)));
+    }
+
+    pub fn remove(&self, id: &str) -> Option<Arc<tokio::sync::Mutex<LiveConn>>> {
+        self.conns.lock().unwrap().remove(id)
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<tokio::sync::Mutex<LiveConn>>> {
+        self.conns.lock().unwrap().get(id).cloned()
+    }
+}
+
+pub fn es<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}

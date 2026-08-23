@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>数镜</title>
+    <style>
+      /* 窗口创建时避免闪色,主题提前于应用加载 */
+      html,
+      body {
+        background: #1d1d20;
+      }
+      html.light,
+      html.light body {
+        background: #f5f5f7;
+      }
+    </style>
+    <script>
+      try {
+        if (localStorage.getItem('dblens_theme') === 'light')
+          document.documentElement.classList.add('light')
+      } catch (e) {}
+      window.__errs = []
+      window.addEventListener('error', (e) => {
+        window.__errs.push(String(e.message) + ' @ ' + (e.filename || '') + ':' + e.lineno)
+      })
+      window.addEventListener('unhandledrejection', (e) => {
+        window.__errs.push('REJ: ' + String(e.reason))
+      })
+    </script>
+  </head>
+
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
