@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch } from 'vue'
-import { NButton, NDropdown, NInput, NModal, useMessage, type DropdownOption } from 'naive-ui'
+import { NButton, NDropdown, NInput, NModal, useMessage } from 'naive-ui'
 import { useColumnLayout } from '../composables/useColumnLayout'
 import { useVirtualScroll } from '../composables/useVirtualScroll'
 import { useCellEditing } from '../composables/useCellEditing'
+import { useContextMenus } from '../composables/useContextMenus'
 import type { OrderDir } from '../types'
 
 const props = defineProps<{
@@ -167,6 +168,85 @@ const editing = useCellEditing({
 })
 const { editCell, editNew, draft, startEditNew, commitEdit, cancelEdit, moveEdit } = editing
 
+function showColStats(col: string) {
+  const i = props.columns.indexOf(col)
+  const nums: number[] = []
+  let nulls = 0
+  for (const row of props.rows) {
+    const v = row[i]
+    if (v === null) {
+      nulls++
+    } else if (NUM_RE.test(v)) {
+      nums.push(Number(v))
+    }
+  }
+  if (nums.length) {
+    const sum = nums.reduce((a, b) => a + b, 0)
+    message.info(
+      `${col}:共 ${props.rows.length} 行 · 数值 ${nums.length} · SUM ${fmtNum(sum)} · AVG ${fmtNum(sum / nums.length)} · MIN ${fmtNum(Math.min(...nums))} · MAX ${fmtNum(Math.max(...nums))}` +
+        (nulls ? ` · NULL ${nulls}` : ''),
+      { duration: 6000 },
+    )
+  } else {
+    const uniq = new Set(props.rows.map((r) => r[i])).size
+    message.info(`${col}:共 ${props.rows.length} 行 · 去重 ${uniq} · NULL ${nulls}`, { duration: 6000 })
+  }
+}
+
+// ── 右键菜单 ────────────────────────────────────────
+const menus = useContextMenus({
+  editable: () => !!props.editable,
+  sortable: () => !!props.sortable,
+  sortKey: () => props.sortKey,
+  sortDir: () => props.sortDir ?? 'asc',
+  hasTableName: () => !!props.tableName,
+  cellActions: {
+    copyCell: async (r, c) => {
+      try { await navigator.clipboard.writeText(displayValue(r, c) ?? '') } catch { /* 不可用 */ }
+    },
+    copyRowJson: async (r) => {
+      const cols = props.columns
+      const row = props.rows[r] ?? []
+      const obj: Record<string, string | null> = {}
+      cols.forEach((name, i) => (obj[name] = pendingValue(r, i) ?? row[i] ?? null))
+      try { await navigator.clipboard.writeText(JSON.stringify(obj, null, 2)) } catch { /* 同上 */ }
+    },
+    copyRowCsv: async (r) => {
+      const cols = props.columns
+      const row = props.rows[r] ?? []
+      const esc = (x: string) => /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x
+      const text = cols.map(esc).join(',') + '\n' + cols.map((_, i) => esc(pendingValue(r, i) ?? row[i] ?? '')).join(',')
+      try { await navigator.clipboard.writeText(text) } catch { /* 同上 */ }
+    },
+    copyInsert: async (r) => {
+      if (!props.tableName) return
+      const q = props.mysqlDialect ? '`' : '"'
+      const qi = (x: string) => q + x.split(q).join(q + q) + q
+      const cols = props.columns
+      const row = props.rows[r] ?? []
+      const lit = (v: string | null) => (v === null ? 'NULL' : `'${v.replace(/'/g, "''")}'`)
+      const sql = `INSERT INTO ${qi(props.tableName)} (${cols.map(qi).join(', ')}) VALUES (${cols
+        .map((_, i) => lit(pendingValue(r, i) ?? row[i] ?? null))
+        .join(', ')});`
+      try { await navigator.clipboard.writeText(sql) } catch { /* 同上 */ }
+    },
+    copyRowToNew: (r) => emit('copy-row', r),
+    openMlEdit: (r, c) => openMlEdit(r, c),
+    setNull: (r, col) => emit('cell-change', r, col, null),
+  },
+  headActions: {
+    copyColName: async (col) => {
+      try { await navigator.clipboard.writeText(col) } catch { /* 同上 */ }
+    },
+    togglePin: (col) => togglePin(col),
+    filterCol: (col, op) => emit('filter-col', col, op),
+    showStats: (col) => showColStats(col),
+  },
+})
+const { ctx, headCtx, ctxOptions, headCtxOptions, openCtx, openHeadCtx } = menus
+const onCtxSelect = (key: string | number) => menus.onCtxSelect(key, props.columns, displayValue)
+const onHeadCtxSelect = (key: string | number) => menus.onHeadCtxSelect(key, (col, dir) => emit('sort', col, dir))
+
 // 包装:保留 FK 候选加载
 async function startEdit(r: number, c: number) {
   if (!props.editable || rowDeleted(r)) return
@@ -211,113 +291,8 @@ watch([start], () => {
 })
 
 // ── 列头右键菜单 ──────────────────────────────────────
-const headCtx = ref({ show: false, x: 0, y: 0, col: '' })
 
-function openHeadCtx(e: MouseEvent, col: string) {
-  e.preventDefault()
-  headCtx.value = { show: true, x: e.clientX, y: e.clientY, col }
-}
 
-const headCtxOptions = computed<DropdownOption[]>(() => {
-  const col = headCtx.value.col
-  const opts: DropdownOption[] = [{ label: '复制列名', key: 'copy' }]
-  if (props.sortable) {
-    opts.push({
-      label: '排序',
-      key: 'sort-menu',
-      children: [
-        { label: props.sortKey === col && props.sortDir === 'asc' ? '✓ 升序' : '升序', key: 'sort-asc' },
-        { label: props.sortKey === col && props.sortDir === 'desc' ? '✓ 降序' : '降序', key: 'sort-desc' },
-        { label: '取消排序', key: 'sort-none' },
-      ],
-    })
-  }
-  opts.push({
-    label: headCtx.value.col && pinned.value.includes(headCtx.value.col) ? '取消固定此列' : '固定此列到左侧',
-    key: 'pin',
-  })
-  opts.push(
-    { label: '按此列筛选…', key: 'filter' },
-    { label: '筛选 NULL 值', key: 'isnull' },
-    { label: '筛选非空值', key: 'notnull' },
-  )
-  opts.push({
-    label: '转换',
-    key: 'tf-menu',
-    children: [
-      { label: !colTransforms.value[col ?? ''] ? '✓ 无' : '无', key: 'tf-none' },
-      ...TRANSFORMS.map((t) => ({
-        label: colTransforms.value[col ?? ''] === t.key ? `✓ ${t.label}` : t.label,
-        key: `tf-${t.key}`,
-      })),
-    ],
-  })
-  opts.push({ type: 'divider', key: 'd' }, { label: '列统计(当前页)', key: 'stats' })
-  return opts
-})
-
-async function onHeadCtxSelect(key: string | number) {
-  const col = headCtx.value.col
-  headCtx.value.show = false
-  const k = String(key)
-  if (k.startsWith('sort-')) {
-    if (k === 'sort-none') emit('sort', col ?? '', null)
-    else if (k === 'sort-asc') emit('sort', col ?? '', 'asc')
-    else emit('sort', col ?? '', 'desc')
-    return
-  }
-  if (k.startsWith('tf-')) {
-    if (k === 'tf-none' || !col) delete colTransforms.value[col ?? '']
-    else colTransforms.value[col] = k.slice(3)
-    return
-  }
-  switch (key) {
-    case 'copy':
-      try {
-        await navigator.clipboard.writeText(col)
-      } catch {
-        /* 剪贴板不可用 */
-      }
-      break
-    case 'pin':
-      togglePin(col)
-      break
-    case 'filter':
-      emit('filter-col', col, '=')
-      break
-    case 'isnull':
-      emit('filter-col', col, 'IS NULL')
-      break
-    case 'notnull':
-      emit('filter-col', col, 'IS NOT NULL')
-      break
-    case 'stats': {
-      const i = props.columns.indexOf(col)
-      const nums: number[] = []
-      let nulls = 0
-      for (const row of props.rows) {
-        const v = row[i]
-        if (v === null) {
-          nulls++
-        } else if (NUM_RE.test(v)) {
-          nums.push(Number(v))
-        }
-      }
-      if (nums.length) {
-        const sum = nums.reduce((a, b) => a + b, 0)
-        message.info(
-          `${col}:共 ${props.rows.length} 行 · 数值 ${nums.length} · SUM ${fmtNum(sum)} · AVG ${fmtNum(sum / nums.length)} · MIN ${fmtNum(Math.min(...nums))} · MAX ${fmtNum(Math.max(...nums))}` +
-            (nulls ? ` · NULL ${nulls}` : ''),
-          { duration: 6000 },
-        )
-      } else {
-        const uniq = new Set(props.rows.map((r) => r[i])).size
-        message.info(`${col}:共 ${props.rows.length} 行 · 去重 ${uniq} · NULL ${nulls}`, { duration: 6000 })
-      }
-      break
-    }
-  }
-}
 
 function fmtNum(n: number): string {
   return Number.isInteger(n) ? n.toLocaleString() : n.toFixed(2)
@@ -368,100 +343,8 @@ const allChecked = computed(() => {
   if (!props.checkedRows || !props.rows.length) return false
   return props.rows.every((_, i) => props.checkedRows?.[i])
 })
-const ctx = ref({ show: false, x: 0, y: 0, r: 0, c: 0 })
 
-function openCtx(e: MouseEvent, r: number, c: number) {
-  e.preventDefault()
-  ctx.value = { show: true, x: e.clientX, y: e.clientY, r, c }
-}
 
-const ctxOptions = computed<DropdownOption[]>(() => {
-  const opts: DropdownOption[] = [
-    { label: '复制单元格', key: 'cell' },
-    { label: '筛选此值', key: 'filterval' },
-    { label: '复制整行 (JSON)', key: 'row' },
-    { label: '复制行 (CSV)', key: 'rowcsv' },
-  ]
-  if (props.tableName) {
-    opts.push({ label: '复制 INSERT 语句', key: 'insert' })
-  }
-  if (props.editable) {
-    opts.push({ type: 'divider', key: 'd' })
-    opts.push({ label: '复制为新行', key: 'copyrow' })
-    opts.push({ label: '多行编辑… (⌥↵)', key: 'ml' })
-    opts.push({ label: '设为 NULL', key: 'null' })
-  }
-  return opts
-})
-
-async function onCtxSelect(key: string | number) {
-  ctx.value.show = false
-  const { r, c } = ctx.value
-  const col = props.columns[c]
-  switch (key) {
-    case 'cell': {
-      const v = displayValue(r, c)
-      try {
-        await navigator.clipboard.writeText(v ?? '')
-      } catch {
-        /* 剪贴板不可用时静默 */
-      }
-      break
-    }
-    case 'rowcsv': {
-      const cols = props.columns
-      const row = props.rows[r] ?? []
-      const esc2 = (x: string) => /[",\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x
-      const text = cols.map(esc2).join(',') + '\n' + cols.map((_, i) => esc2(pendingValue(r, i) ?? row[i] ?? '')).join(',')
-      try {
-        await navigator.clipboard.writeText(text)
-      } catch { /* 同上 */ }
-      break
-    }
-    case 'insert': {
-      const tn = props.tableName!
-      const q = props.mysqlDialect ? '`' : '"'
-      const qi = (x: string) => q + x.split(q).join(q + q) + q
-      const cols = props.columns
-      const row = props.rows[r] ?? []
-      const lit = (v: string | null) => (v === null ? 'NULL' : `'${v.replace(/'/g, "''")}'`)
-      const sql = `INSERT INTO ${qi(tn)} (${cols.map(qi).join(', ')}) VALUES (${cols
-        .map((_, i) => lit(pendingValue(r, i) ?? row[i] ?? null))
-        .join(', ')});`
-      try {
-        await navigator.clipboard.writeText(sql)
-      } catch { /* 同上 */ }
-      break
-    }
-    case 'row': {
-      const cols = props.columns
-      const row = props.rows[r] ?? []
-      const obj: Record<string, string | null> = {}
-      cols.forEach((name, i) => (obj[name] = pendingValue(r, i) ?? row[i] ?? null))
-      try {
-        await navigator.clipboard.writeText(JSON.stringify(obj, null, 2))
-      } catch {
-        /* 同上 */
-      }
-      break
-    }
-    case 'null':
-      if (col) emit('cell-change', r, col, null)
-      break
-    case 'filterval': {
-      const col = props.columns[c]
-      const v = displayValue(r, c)
-      if (col && v !== null) emit('filter-value', col, v)
-      break
-    }
-    case 'copyrow':
-      emit('copy-row', r)
-      break
-    case 'ml':
-      openMlEdit(r, c)
-      break
-  }
-}
 
 defineExpose({
   toggleCol: (c: string) => {
