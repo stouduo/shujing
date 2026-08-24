@@ -15,6 +15,7 @@ import type { ConnInfo, TableMeta } from '../types'
 import Icon from './Icon.vue'
 import { exportDatabase, exportTable, importSqlFile } from '../exportImport'
 import NewObjectModal from './NewObjectModal.vue'
+import TableStatsModal from './TableStatsModal.vue'
 
 const store = useAppStore()
 const emit = defineEmits<{
@@ -131,6 +132,7 @@ const menuOptions: DropdownOption[] = [
     children: [
       { label: 'OPTIMIZE(优化碎片)', key: 'maint-opt' },
       { label: 'ANALYZE(更新统计)', key: 'maint-ana' },
+      { label: '表统计信息…', key: 'maint-stats' },
     ],
   },
   { label: '重命名…', key: 'rename' },
@@ -143,6 +145,8 @@ const menuOptions: DropdownOption[] = [
 
 // ── 新建对象 ────────────────────────────────────────
 const showNewObj = ref(false)
+const showStats = ref(false)
+const statsTable = ref('')
 const newObjConn = ref('')
 const newObjKind = ref<'trigger' | 'procedure' | 'function' | 'view'>('trigger')
 
@@ -277,6 +281,10 @@ async function onMenuSelect(key: string | number) {
         () => message.success('OPTIMIZE 完成'),
         (e) => message.error(String(e)),
       )
+      break
+    case 'maint-stats':
+      statsTable.value = t.table.name
+      showStats.value = true
       break
     case 'maint-ana':
       store.maintainTable(t.connId, t.table.name, 'analyze').then(
@@ -581,6 +589,11 @@ async function onConnMenuSelect(key: string | number) {
   </aside>
 
   <!-- 新建对象弹窗 -->
+  <TableStatsModal
+    v-model:show="showStats"
+    :conn-id="menuTarget?.connId ?? null"
+    :table="statsTable"
+  />
   <NewObjectModal
     v-model:show="showNewObj"
     :conn-id="newObjConn || null"
