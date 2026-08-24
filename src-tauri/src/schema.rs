@@ -1,4 +1,5 @@
-use crate::model::{es, Backend, ColumnDef, ConnInfo, IndexDef, TableMeta, TableStructure};
+pub use crate::model::TableMeta;
+use crate::model::{es, Backend, ColumnDef, ConnInfo, IndexDef, TableStructure};
 
 /// 外键关系(ER 图数据源)
 #[derive(Debug, Clone, serde::Serialize)]
@@ -102,6 +103,48 @@ async fn fk_pg(client: &tokio_postgres::Client) -> Result<Vec<FkMeta>, String> {
 }
 
 /// 表名来自我们查出的列表,仍做标识符转义防注入
+/// 列出服务器上所有数据库
+pub async fn list_databases(backend: &mut Backend, info: &ConnInfo) -> Result<Vec<String>, String> {
+    match backend {
+        Backend::Sqlite(_) => Ok(vec![]),
+        Backend::MySql(conn) => {
+            use mysql_async::prelude::*;
+            let mut result = conn
+                .query_iter("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys') ORDER BY SCHEMA_NAME")
+                .await
+                .map_err(es)?;
+            let mut out = Vec::new();
+            result
+                .for_each(|row| {
+                    let v = row.unwrap();
+                    if let Some(mysql_async::Value::Bytes(b)) = v.get(0) {
+                        out.push(String::from_utf8_lossy(b).into_owned());
+                    }
+                })
+                .await
+                .map_err(es)?;
+            Ok(out)
+        }
+        Backend::Pg(client) => {
+            use tokio_postgres::SimpleQueryMessage;
+            let messages = client
+                .simple_query("SELECT datname FROM pg_database WHERE datallowconn ORDER BY datname")
+                .await
+                .map_err(es)?;
+            let mut out = Vec::new();
+            for msg in messages {
+                if let SimpleQueryMessage::Row(row) = msg {
+                    if let Some(n) = row.get(0) {
+                        out.push(n.to_string());
+                    }
+                }
+            }
+            Ok(out)
+        }
+        Backend::Redis(_) => Ok(vec![]),
+    }
+}
+
 fn ident(name: &str, mysql: bool) -> String {
     if mysql {
         format!("`{}`", name.replace('`', "``"))
@@ -531,12 +574,16 @@ pub async fn object_ddl(
 
 impl Backend {
     pub async fn list_tables(&mut self, info: &crate::model::ConnInfo) -> Result<Vec<TableMeta>, String> {
+        self.list_tables_in(info, info.database.as_deref()).await
+    }
+
+    pub async fn list_tables_in(&mut self, info: &crate::model::ConnInfo, database: Option<&str>) -> Result<Vec<TableMeta>, String> {
         match self {
             Backend::Sqlite(conn) => schema_sqlite(conn),
             Backend::MySql(conn) => {
-                let db = info.database.as_deref().map(str::trim)
+                let db = database.map(str::trim)
                     .filter(|s| !s.is_empty())
-                    .ok_or_else(|| "连接未指定数据库,请编辑连接补充数据库名".to_string())?;
+                    .ok_or_else(|| "未指定数据库".to_string())?;
                 schema_mysql(conn, db).await
             }
             Backend::Pg(client) => schema_pg(client).await,

@@ -33,7 +33,9 @@ export const connect = (info: ConnInfo) => call<ConnectResult>('connect', { info
 
 export const disconnect = (id: string) => call<void>('disconnect', { id })
 
-export const listTables = (id: string) => call<TableMeta[]>('list_tables', { id })
+export const listDatabases = (id: string) => call<string[]>('list_databases', { id })
+export const listTables = (id: string, database?: string) =>
+  call<TableMeta[]>('list_tables', { id, database })
 
 export const getTableStructure = (id: string, table: string) =>
   call<TableStructure>('get_table_structure', { id, table })

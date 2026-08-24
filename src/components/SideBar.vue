@@ -14,6 +14,7 @@ import { useAppStore } from '../stores/app'
 import type { ConnInfo, TableMeta } from '../types'
 import Icon from './Icon.vue'
 import { exportDatabase, exportTable, importSqlFile } from '../exportImport'
+import * as api from '../api'
 import NewObjectModal from './NewObjectModal.vue'
 import TableStatsModal from './TableStatsModal.vue'
 
@@ -45,9 +46,51 @@ const DB_COLOR: Record<string, string> = {
   redis: '#ff6b70',
 }
 
+// ── 多数据库浏览 ──────────────────────────────────────
+const databases = ref<Record<string, string[]>>({})
+const selectedDb = ref<Record<string, string>>({})
+
+function isMultiDb(c: ConnInfo): boolean {
+  return c.dbType === 'mysql' || c.dbType === 'postgres'
+}
+
+async function loadDatabases(connId: string) {
+  if (databases.value[connId]) return
+  try {
+    const dbs = await api.listDatabases(connId)
+    databases.value[connId] = dbs
+    const conn = store.connById(connId)
+    const defaultDb = conn?.database || dbs[0] || ''
+    if (defaultDb && !selectedDb.value[connId]) {
+      selectedDb.value[connId] = defaultDb
+    }
+  } catch {
+    databases.value[connId] = []
+  }
+}
+
+async function selectDb(connId: string, db: string) {
+  if (selectedDb.value[connId] === db) return
+  selectedDb.value[connId] = db
+  const live = store.live[connId]
+  if (live) {
+    live.loading = true
+    try {
+      live.tables = await api.listTables(connId, db)
+    } catch (e) {
+      console.warn('加载表失败:', e)
+    } finally {
+      live.loading = false
+    }
+  }
+}
+
 function toggle(c: ConnInfo) {
   if (store.live[c.id]) store.disconnect(c.id)
-  else store.connect(c.id)
+  else {
+    store.connect(c.id)
+    if (isMultiDb(c)) loadDatabases(c.id)
+  }
 }
 
 function groupKey(connId: string, kind: string): string {
@@ -407,8 +450,7 @@ async function onConnMenuSelect(key: string | number) {
       <div v-for="c in store.saved" :key="c.id" class="conn">
         <div
           class="row"
-          :class="{ colored: !!c.color }"
-          :style="c.color ? { '--c-color': c.color } : undefined"
+
           :title="c.name"
           @click="toggle(c)"
           @contextmenu.prevent="openConnMenu($event, c)"
@@ -453,6 +495,26 @@ async function onConnMenuSelect(key: string | number) {
             </div>
           </template>
           <template v-else>
+            <!-- 多数据库:MySQL/PG 显示库选择器 -->
+            <div v-if="isMultiDb(c)" class="db-selector">
+              <select
+                v-if="databases[c.id]?.length"
+                class="db-select"
+                :value="selectedDb[c.id] || ''"
+                @change="selectDb(c.id, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="db in databases[c.id]" :key="db" :value="db">{{ db }}</option>
+              </select>
+              <n-spin v-else size="small" />
+              <n-button
+                quaternary
+                size="tiny"
+                title="刷新数据库列表"
+                @click="() => { delete databases[c.id]; loadDatabases(c.id) }"
+              >
+                <Icon name="refresh" :size="11" />
+              </n-button>
+            </div>
             <div
               class="group"
               @click="toggleGroup(c.id, 'table')"
@@ -757,9 +819,6 @@ async function onConnMenuSelect(key: string | number) {
   background: var(--bg-hover);
   color: var(--text);
 }
-.row.colored {
-  box-shadow: inset 3px 0 0 var(--c-color, var(--accent));
-}
 .dot {
   width: 7px;
   height: 7px;
@@ -923,6 +982,28 @@ async function onConnMenuSelect(key: string | number) {
 .tbl-icon.proc {
   color: #ff9e64;
   opacity: 0.9;
+}
+.db-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 6px 14px;
+}
+.db-select {
+  flex: 1;
+  height: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 12px;
+  padding: 0 6px;
+  outline: none;
+  cursor: pointer;
+}
+.db-select:hover,
+.db-select:focus {
+  border-color: var(--accent);
 }
 .add-obj {
   color: var(--text-tertiary);

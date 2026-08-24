@@ -34,11 +34,9 @@ const form = reactive({
   password: '',
   database: '',
   filePath: '',
-  color: '' as string,
   readOnly: false,
 })
 
-const COLORS = ['#0a84ff', '#30d158', '#f2915a', '#bf7af0', '#ff6482', '#64d2ff']
 
 function defaultPort(t: DbType): number {
   if (t === 'postgres') return 5432
@@ -69,7 +67,6 @@ watch(
       form.password = e.password ?? ''
       form.database = e.database ?? ''
       form.filePath = e.filePath ?? ''
-      form.color = e.color ?? ''
       form.readOnly = !!e.readOnly
     } else {
       Object.assign(form, {
@@ -81,7 +78,6 @@ watch(
         password: '',
         database: '',
         filePath: '',
-        color: '',
         readOnly: false,
       })
     }
@@ -112,7 +108,6 @@ function buildInfo(): ConnInfo {
     password: isServer && form.password !== '' ? form.password : null,
     database: isServer ? s(form.database) : null,
     filePath: !isServer ? s(form.filePath) : null,
-    color: form.color || null,
     readOnly: form.readOnly,
   }
 }
@@ -138,10 +133,6 @@ async function save() {
   if (info.dbType === 'mysql' || info.dbType === 'postgres') {
     if (!info.user) {
       message.warning('请填写用户名')
-      return
-    }
-    if (!info.database) {
-      message.warning('请填写数据库名')
       return
     }
   }
@@ -180,21 +171,7 @@ async function pickFile() {
       <n-form-item label="名称">
         <n-input v-model:value="form.name" :placeholder="defaultName(form.dbType)" />
       </n-form-item>
-      <n-form-item label="标识色">
-        <div class="color-row">
-          <button
-            v-for="c in COLORS"
-            :key="c"
-            class="color-dot"
-            :class="{ sel: form.color === c }"
-            :style="{ background: c }"
-            :title="c"
-            @click="form.color = form.color === c ? '' : c"
-          />
-          <span v-if="!form.color" class="color-hint">不标色</span>
-        </div>
-      </n-form-item>
-      <n-form-item label="只读模式">
+            <n-form-item label="只读模式">
         <div class="ro-row">
           <n-switch v-model:value="form.readOnly" size="small" />
           <span class="ro-hint">开启后仅允许查询,所有写入/DDL 被拦截(适合生产库)</span>
@@ -234,10 +211,10 @@ async function pickFile() {
             placeholder="留空表示无密码"
           />
         </n-form-item>
-        <n-form-item :label="form.dbType === 'redis' ? 'DB 编号' : '数据库'">
+        <n-form-item :label="form.dbType === 'redis' ? 'DB 编号' : '默认数据库(可选)'">
           <n-input
             v-model:value="form.database"
-            :placeholder="form.dbType === 'redis' ? '0 - 15,默认 0' : ''"
+            :placeholder="form.dbType === 'redis' ? '0 - 15,默认 0' : '连接后可浏览所有库'"
             class={undefined}
           />
         </n-form-item>
@@ -262,30 +239,12 @@ async function pickFile() {
 .gap {
   flex: 1;
 }
-.color-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-top: 2px;
-}
-.color-dot {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: transform 0.1s ease;
-}
 .color-dot:hover {
   transform: scale(1.15);
 }
 .color-dot.sel {
   border-color: #f5f5f7;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
-}
-.color-hint {
-  font-size: 11.5px;
-  color: var(--text-tertiary);
 }
 .ro-row {
   display: flex;

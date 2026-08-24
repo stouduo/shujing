@@ -345,6 +345,8 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
     }
     case 'disconnect':
       return undefined as T
+    case 'list_databases':
+      return ['shop', 'analytics', 'logs'] as T
     case 'list_tables':
       return [
         ...TABLES.map((t) => ({ name: t.name, kind: t.kind })),

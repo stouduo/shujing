@@ -58,8 +58,30 @@ async fn disconnect(state: State<'_, AppState>, id: String) -> Result<(), String
     Ok(())
 }
 
+/// 列出服务器上所有数据库
 #[tauri::command]
-async fn list_tables(state: State<'_, AppState>, id: String) -> Result<Vec<TableMeta>, String> {
+async fn list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
+    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let mut guard = live.lock().await;
+    let info = guard.info.clone();
+    schema::list_databases(&mut guard.backend, &info).await
+}
+
+/// 列出指定数据库中的表
+#[tauri::command]
+async fn list_tables(
+    state: State<'_, AppState>,
+    id: String,
+    database: Option<String>,
+) -> Result<Vec<schema::TableMeta>, String> {
+    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let mut guard = live.lock().await;
+    let info = guard.info.clone();
+    guard.backend.list_tables_in(&info, database.as_deref().or(info.database.as_deref())).await
+}
+
+#[tauri::command]
+async fn list_tables_legacy(state: State<'_, AppState>, id: String) -> Result<Vec<TableMeta>, String> {
     let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
@@ -748,6 +770,7 @@ pub fn run() {
             connect,
             disconnect,
             list_tables,
+            list_databases,
             get_table_structure,
             count_rows,
             list_foreign_keys,
