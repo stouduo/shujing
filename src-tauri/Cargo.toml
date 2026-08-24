@@ -1,6 +1,6 @@
 [package]
 name = "dbclient"
-version = "0.2.0"
+version = "0.3.0"
 description = "DBLens - a lightweight database client"
 authors = ["you"]
 edition = "2021"
