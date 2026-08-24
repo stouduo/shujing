@@ -18,6 +18,25 @@ interface Item {
   table: TableMeta
 }
 
+// 最近使用(最多 8 张表)
+const RECENT_KEY = 'dblens_recent_tables'
+
+function getRecent(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function pushRecent(name: string) {
+  const list = getRecent().filter((n) => n !== name)
+  list.unshift(name)
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 8)))
+}
+
+const recentSet = computed(() => new Set(getRecent()))
+
 const all = computed<Item[]>(() => {
   const out: Item[] = []
   for (const c of store.saved) {
@@ -66,6 +85,10 @@ const filtered = computed<Item[]>(() => {
         it.table.kind === 'redis-db' || it.table.name.toLowerCase().includes(q),
     )
     .sort((a, b) => {
+      // 最近使用优先
+      const ra = recentSet.value.has(a.table.name) ? 0 : 1
+      const rb = recentSet.value.has(b.table.name) ? 0 : 1
+      if (ra !== rb) return ra - rb
       const ai = a.table.name.toLowerCase().indexOf(q)
       const bi = b.table.name.toLowerCase().indexOf(q)
       return ai - bi
@@ -114,6 +137,7 @@ const rows = computed<Row[]>(() => {
           store.openRedis(it.connId, idx)
         } else {
           store.openTable(it.connId, it.table)
+          pushRecent(it.table.name)
         }
         emit('update:show', false)
       },

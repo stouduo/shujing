@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { basicSetup } from 'codemirror'
+import { search, searchKeymap } from '@codemirror/search'
 import { Compartment, Prec } from '@codemirror/state'
 import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
@@ -143,6 +144,8 @@ onMounted(() => {
         ]),
       ),
       basicSetup,
+      search({ top: true }),
+      keymap.of(searchKeymap),
       hlComp.of(syntaxHighlighting(props.theme === 'light' ? sqlHighlightLight : sqlHighlightDark)),
       placeholder('SELECT * FROM …'),
       langComp.of(langExt(props.dialect, props.tables, props.columns)),

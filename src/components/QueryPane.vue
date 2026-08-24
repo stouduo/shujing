@@ -21,6 +21,59 @@ const SqlEditor = defineAsyncComponent(() => import('./SqlEditor.vue'))
 const editorActive = ref(false)
 const showOptimize = ref(false)
 
+// ── 查询参数变量(:name) ──────────────────────────────
+const paramValues = ref<Record<string, string>>({})
+const showParamModal = ref(false)
+const pendingSql = ref('')
+
+/** 提取 SQL 中的 :param 变量(排除 ::类型转换和引号内) */
+function extractParams(sql: string): string[] {
+  const params = new Set<string>()
+  const clean = sql.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""')
+  for (const m of clean.matchAll(/(?<!:):(\w+)/g)) {
+    if (m[1] && !['true', 'false', 'null'].includes(m[1].toLowerCase())) {
+      params.add(m[1])
+    }
+  }
+  return [...params]
+}
+
+/** 替换 :param 为用户输入的值 */
+function substituteParams(sql: string, values: Record<string, string>): string {
+  return sql.replace(/(?<!:):(\w+)/g, (full: string, name: string) => {
+    if (['true', 'false', 'null'].includes(name.toLowerCase())) return full
+    const v = values[name]
+    if (v === undefined) return full
+    if (/^-?\d+(\.\d+)?$/.test(v)) return v
+    return `'${v.replace(/'/g, "''")}'`
+  })
+}
+
+function runWithParams() {
+  const sql = props.tab.sql.trim()
+  const params = extractParams(sql)
+  if (!params.length) {
+    run()
+    return
+  }
+  // 检查是否已有值(上次输入)
+  const missing = params.filter((p) => !paramValues.value[p])
+  if (missing.length === 0) {
+    // 全有值,直接替换执行
+    pendingSql.value = substituteParams(sql, paramValues.value)
+    store.runQuery(props.tab.id, pendingSql.value)
+  } else {
+    pendingSql.value = sql
+    showParamModal.value = true
+  }
+}
+
+function executeWithParams() {
+  const sql = substituteParams(pendingSql.value, paramValues.value)
+  showParamModal.value = false
+  store.runQuery(props.tab.id, sql)
+}
+
 watch(
   () => props.tab.sql,
   (v) => {
@@ -252,7 +305,11 @@ function onSnippet(key: string | number) {
 }
 
 function run(selectedSql?: string) {
-  store.runQuery(props.tab.id, selectedSql)
+  if (selectedSql) {
+    store.runQuery(props.tab.id, selectedSql)
+    return
+  }
+  runWithParams()
 }
 
 async function beautify() {
@@ -489,6 +546,32 @@ function applyHistory(key: string | number) {
         </div>
       </template>
     </n-split>
+    <!-- 参数输入弹窗 -->
+    <n-modal
+      :show="showParamModal"
+      preset="card"
+      title="查询参数"
+      :style="{ width: '420px' }"
+      @update:show="(v: boolean) => (showParamModal = v)"
+    >
+      <div v-for="p in extractParams(pendingSql)" :key="p" class="param-row">
+        <span class="param-name mono">:{{ p }}</span>
+        <input
+          v-model="paramValues[p]"
+          class="param-input mono"
+          :placeholder="`输入 ${p} 的值`"
+          @keyup.enter="executeWithParams"
+        />
+      </div>
+      <template #footer>
+        <div style="display:flex; justify-content:flex-end; gap:8px">
+          <n-button size="small" @click="showParamModal = false">取消</n-button>
+          <n-button size="small" type="primary" @click="executeWithParams">
+            <Icon name="play" :size="12" /> 执行
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
     <SqlOptimizeModal
       v-model:show="showOptimize"
       :sql="tab.sql"
@@ -578,6 +661,33 @@ function applyHistory(key: string | number) {
 }
 .mem-filter {
   width: 230px;
+}
+.param-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.param-name {
+  width: 100px;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 700;
+}
+.param-input {
+  flex: 1;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 13px;
+  padding: 0 8px;
+  outline: none;
+}
+.param-input:focus {
+  border-color: var(--accent);
 }
 .eq-info {
   font-size: 12px;

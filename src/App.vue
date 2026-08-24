@@ -25,18 +25,42 @@ const editingConn = ref<ConnInfo | null>(null)
 const showImport = ref(false)
 const importConnId = ref<string | null>(null)
 const showQuickOpen = ref(false)
+const pinnedTabs = ref<Set<string>>(new Set())
+
+function togglePin(id: string) {
+  if (pinnedTabs.value.has(id)) pinnedTabs.value.delete(id)
+  else pinnedTabs.value.add(id)
+  // 触发响应式
+  pinnedTabs.value = new Set(pinnedTabs.value)
+}
 const showGlobalSearch = ref(false)
 
 // ── 主题 ──────────────────────────────────────────────
-const theme = ref<'dark' | 'light'>(
-  localStorage.getItem('dblens_theme') === 'light' ? 'light' : 'dark',
-)
+// 主题:手动选择 > 系统跟随
+const getInitialTheme = (): 'dark' | 'light' => {
+  const saved = localStorage.getItem('dblens_theme')
+  if (saved === 'light' || saved === 'dark') return saved
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+const theme = ref<'dark' | 'light'>(getInitialTheme())
+
+// 监听系统主题变化(仅未手动选择时)
+const themeAuto = ref(!localStorage.getItem('dblens_theme'))
+if (themeAuto.value) {
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+    if (themeAuto.value) {
+      theme.value = e.matches ? 'light' : 'dark'
+      applyTheme()
+    }
+  })
+}
 
 function applyTheme() {
   document.documentElement.classList.toggle('light', theme.value === 'light')
 }
 
 function toggleTheme() {
+  themeAuto.value = false
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
   localStorage.setItem('dblens_theme', theme.value)
   applyTheme()
@@ -160,11 +184,25 @@ function onKeydown(e: KeyboardEvent) {
     showGlobalSearch.value = !showGlobalSearch.value
   } else if (mod && e.key.toLowerCase() === 'w') {
     e.preventDefault()
-    if (store.activeTabId) store.closeTab(store.activeTabId)
+    if (store.activeTabId && !pinnedTabs.value.has(store.activeTabId)) {
+      store.closeTab(store.activeTabId)
+    }
   } else if (mod && /^[1-9]$/.test(e.key)) {
     e.preventDefault()
     const t = store.tabs[Number(e.key) - 1]
     if (t) store.activeTabId = t.id
+  } else if (mod && e.key.toLowerCase() === 'f') {
+    // ⌘F:结果内搜索(委托给当前面板的 grid)
+    // 通过自定义事件让各面板响应
+    window.dispatchEvent(new CustomEvent('result-search'))
+    e.preventDefault()
+  } else if (e.key === '?' && !mod) {
+    // 仅在非输入框时触发
+    const tag = (e.target as HTMLElement)?.tagName
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      e.preventDefault()
+      showKeys.value = !showKeys.value
+    }
   } else if (e.key === 'F5') {
     e.preventDefault()
     const t = activeTab.value
@@ -272,7 +310,15 @@ function openEdit(info: ConnInfo) {
                     @mousedown.stop
                   />
                   <span v-else class="tab-title" @dblclick.stop="startRename(t.id, t.title)">{{ t.title }}</span>
-                  <button class="tab-close" title="关闭 (⌘W)" @click.stop="store.closeTab(t.id)">
+                  <button
+                    class="tab-pin"
+                    :class="{ pinned: pinnedTabs.has(t.id) }"
+                    :title="pinnedTabs.has(t.id) ? '取消固定' : '固定标签(⌘W 不关闭)'"
+                    @click.stop="togglePin(t.id)"
+                  >
+                    <Icon :name="pinnedTabs.has(t.id) ? 'eye' : 'search'" :size="10" />
+                  </button>
+                  <button class="tab-close" title="关闭 (⌘W)" @click.stop="!pinnedTabs.has(t.id) && store.closeTab(t.id)">
                     <Icon name="x" :size="11" />
                   </button>
                 </div>
@@ -300,9 +346,9 @@ function openEdit(info: ConnInfo) {
                 <span v-if="typeof statusLeft === 'object'" class="status-dot" :class="{ on: statusLeft.online }" />
                 <span>{{ typeof statusLeft === 'object' ? statusLeft.text : statusLeft }}</span>
               </div>
-              <div class="status-right" title="点击查看全部快捷键" style="cursor: pointer" @click="showKeys = true">
-                <span class="kbd">⌘P</span> 找表 · <span class="kbd">⌘⇧F</span> 搜数据 · <span class="kbd">⌘T</span> 新查询 · <span class="kbd">⌘W</span> 关闭 · ?
-              </div>
+              <button class="keys-hint-btn" title="快捷键(?)" @click="showKeys = true">
+                <span class="kbd">?</span>
+              </button>
             </div>
           </div>
         </div>
@@ -374,6 +420,19 @@ function openEdit(info: ConnInfo) {
   border-radius: 50%;
   background: #48484a;
 }
+.keys-hint-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.keys-hint-btn:hover {
+  background: var(--bg-hover);
+}
 .status-dot.on {
   background: var(--green);
 }
@@ -436,6 +495,27 @@ function openEdit(info: ConnInfo) {
   font-size: 12.5px;
   padding: 0 5px;
   outline: none;
+}
+.tab-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0 2px;
+}
+.tab:hover .tab-pin, .tab-pin.pinned {
+  opacity: 1;
+}
+.tab-pin.pinned {
+  color: var(--accent);
+}
+.tab-pin:hover {
+  color: var(--accent);
+}
+.tab-pin.pinned + .tab-close {
+  display: none;
 }
 .tab-close {
   display: inline-flex;

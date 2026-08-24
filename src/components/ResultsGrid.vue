@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRef, watch } from 'vue'
+import { computed, nextTick, ref, toRef, watch } from 'vue'
 import { NButton, NDropdown, NInput, NModal, useMessage } from 'naive-ui'
 import { useColumnLayout } from '../composables/useColumnLayout'
 import { useVirtualScroll } from '../composables/useVirtualScroll'
@@ -61,6 +61,70 @@ const ROW_H = computed(() => (props.rowHeight === 'compact' ? 24 : 28))
 const W_NUM = 46
 const W_DEL = 34
 const W_CHK = 30
+
+const showSearch = ref(false)
+const searchInput = ref<HTMLInputElement | null>(null)
+
+function openSearch() {
+  showSearch.value = true
+  nextTick(() => searchInput.value?.focus())
+}
+
+// ── 方向键导航 ──────────────────────────────────────
+const navCell = ref<{ r: number; c: number } | null>(null)
+
+function onGridKeydown(e: KeyboardEvent) {
+  if (!navCell.value) return
+  const { r, c } = navCell.value
+  const order = colOrder.value
+  const pos = order.indexOf(c)
+  let moved = false
+
+  switch (e.key) {
+    case 'ArrowUp':
+      if (r > 0) { navCell.value = { r: r - 1, c }; moved = true }
+      break
+    case 'ArrowDown':
+      if (r < props.rows.length - 1) { navCell.value = { r: r + 1, c }; moved = true }
+      break
+    case 'ArrowLeft':
+      if (pos > 0) { navCell.value = { r, c: order[pos - 1] }; moved = true }
+      break
+    case 'ArrowRight':
+      if (pos < order.length - 1) { navCell.value = { r, c: order[pos + 1] }; moved = true }
+      break
+    case 'Enter':
+      startEdit(navCell.value.r, navCell.value.c)
+      moved = true
+      break
+  }
+
+  if (moved) {
+    e.preventDefault()
+    // 滚动到可见
+    const el = scroller.value
+    if (el) {
+      const cellTop = navCell.value.r * ROW_H.value
+      const cellBottom = cellTop + ROW_H.value
+      if (cellTop < el.scrollTop) el.scrollTop = cellTop
+      else if (cellBottom > el.scrollTop + el.clientHeight) {
+        el.scrollTop = cellBottom - el.clientHeight
+      }
+    }
+  }
+}
+
+// ── 结果内搜索(⌘F) ──────────────────────────────────
+const searchText = ref('')
+const searchMatches = computed(() => {
+  const q = searchText.value.trim().toLowerCase()
+  if (!q) return new Set<number>()
+  const set = new Set<number>()
+  props.rows.forEach((row, r) => {
+    if (row.some((c) => c !== null && c.toLowerCase().includes(q))) set.add(r)
+  })
+  return set
+})
 
 // ── 虚拟滚动 ────────────────────────────────────────
 const vscroll = useVirtualScroll({ rowCount: computed(() => props.rows.length), rowHeight: 28 })
@@ -347,6 +411,7 @@ const allChecked = computed(() => {
 
 
 defineExpose({
+  openSearch,
   toggleCol: (c: string) => {
     hiddenCols.value = hiddenCols.value.includes(c)
       ? hiddenCols.value.filter((x) => x !== c)
@@ -361,7 +426,24 @@ defineExpose({
 </script>
 
 <template>
-  <div class="grid-wrap" :style="{ '--row-h': ROW_H + 'px' }">
+  <div
+    class="grid-wrap"
+    :style="{ '--row-h': ROW_H + 'px' }"
+    tabindex="0"
+    @keydown="onGridKeydown"
+  >
+    <!-- 结果内搜索条 -->
+    <div v-if="searchText !== '' || showSearch" class="search-bar">
+      <input
+        ref="searchInput"
+        v-model="searchText"
+        class="search-input mono"
+        placeholder="搜索结果…"
+        @keydown.esc="() => { searchText = ''; showSearch = false }"
+      />
+      <span class="search-count">{{ searchMatches.size }} 行命中</span>
+      <button class="search-close" @click="() => { searchText = ''; showSearch = false }">×</button>
+    </div>
     <div
       ref="scroller"
       class="grid"
@@ -458,6 +540,7 @@ defineExpose({
             deleted: rowDeleted(start + ri),
             changed: rowChanged(start + ri) && !rowDeleted(start + ri),
             selected: props.selectedRow === start + ri,
+            'search-hit': searchMatches.has(start + ri),
           }"
           @click="emit('select-row', start + ri)"
         >
@@ -491,6 +574,7 @@ defineExpose({
               edited: cellChanged(start + ri, ci),
               editable: editable && !rowDeleted(start + ri),
               pinned: pinned.includes(columns[ci]),
+              'nav-focus': navCell?.r === start + ri && navCell?.c === ci,
             }"
             :style="{
               width: widths[ci] + 'px',
@@ -570,6 +654,44 @@ defineExpose({
 </template>
 
 <style scoped>
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.search-input {
+  flex: 1;
+  height: 24px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 12px;
+  padding: 0 8px;
+  outline: none;
+}
+.search-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.search-close {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.search-close:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
 .grid-wrap {
   flex: 1;
   min-height: 0;
@@ -617,6 +739,14 @@ defineExpose({
 .row.selected .rownum {
   color: var(--accent);
   font-weight: 700;
+}
+.cell.nav-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  z-index: 4;
+}
+.row.search-hit {
+  background: rgba(255, 213, 74, 0.08) !important;
 }
 .row.deleted {
   background: var(--del-bg);

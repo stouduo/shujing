@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { NButton, NInput, NPopover, NSelect, NSpin, useMessage } from 'naive-ui'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import * as api from '../api'
@@ -56,6 +56,11 @@ const showAddModal = ref(false)
 
 // ── 列显示选择(实际状态由 ResultsGrid 内部管理并持久化) ──
 const gridRef = ref<InstanceType<typeof ResultsGrid> | null>(null)
+
+// ⌘F 结果搜索
+onMounted(() => {
+  window.addEventListener('result-search', () => gridRef.value?.openSearch())
+})
 
 // 行高:紧凑/舒适
 const rowHeight = ref<'compact' | 'cozy'>(
