@@ -545,6 +545,62 @@ export const useAppStore = defineStore('app', {
       }
     },
 
+    /** 复制表(结构+数据) */
+    async duplicateTable(connId: string, table: string, newName: string, withData: boolean) {
+      const conn = this.connById(connId)
+      if (!conn || conn.readOnly) throw new Error('只读连接不允许复制表')
+      const dbType = dbTypeOf(conn)
+      const qt = quoteIdent(table, dbType)
+      const qn = quoteIdent(newName, dbType)
+      if (dbType === 'mysql') {
+        await api.runSql(connId, `CREATE TABLE ${qn} AS SELECT * FROM ${qt}${withData ? '' : ' WHERE 1=0'}`, 1)
+      } else {
+        await api.runSql(connId, `CREATE TABLE ${qn} AS SELECT * FROM ${qt}${withData ? '' : ' WHERE 1=0'}`, 1)
+      }
+      this.refreshTables(connId)
+    },
+
+    /** 表维护:OPTIMIZE / ANALYZE */
+    async maintainTable(connId: string, table: string, action: 'optimize' | 'analyze') {
+      const conn = this.connById(connId)
+      if (!conn) return
+      const dbType = dbTypeOf(conn)
+      const qt = quoteIdent(table, dbType)
+      if (dbType === 'sqlite') {
+        // SQLite 用 VACUUM / ANALYZE
+        await api.runSql(connId, action === 'optimize' ? 'VACUUM' : `ANALYZE ${qt}`, 1)
+      } else {
+        await api.runSql(connId, `${action === 'optimize' ? 'OPTIMIZE TABLE' : 'ANALYZE TABLE'} ${qt}`, 1)
+      }
+    },
+
+    /** 删除触发器/存储过程/函数/视图 */
+    async dropObject(connId: string, objKind: string, name: string) {
+      const conn = this.connById(connId)
+      if (!conn || conn.readOnly) throw new Error('只读连接不允许删除')
+      const dbType = dbTypeOf(conn)
+      const qn = quoteIdent(name, dbType)
+      let sql: string
+      switch (objKind) {
+        case 'trigger':
+          sql = dbType === 'mysql' ? `DROP TRIGGER IF EXISTS ${qn}` : `DROP TRIGGER IF EXISTS ${qn}`
+          break
+        case 'procedure':
+          sql = `DROP PROCEDURE IF EXISTS ${qn}`
+          break
+        case 'function':
+          sql = `DROP FUNCTION IF EXISTS ${qn}`
+          break
+        case 'view':
+          sql = `DROP VIEW IF EXISTS ${qn}`
+          break
+        default:
+          throw new Error(`不支持的类型: ${objKind}`)
+      }
+      await api.runSql(connId, sql, 1)
+      this.refreshTables(connId)
+    },
+
     /** 把表名插入到当前查询(无查询标签则新建) */
     insertIntoQuery(connId: string, name: string) {
       let tab = this.tabs.find((t) => t.id === this.activeTabId && t.kind === 'query')

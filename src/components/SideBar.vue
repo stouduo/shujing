@@ -14,6 +14,7 @@ import { useAppStore } from '../stores/app'
 import type { ConnInfo, TableMeta } from '../types'
 import Icon from './Icon.vue'
 import { exportDatabase, exportTable, importSqlFile } from '../exportImport'
+import NewObjectModal from './NewObjectModal.vue'
 
 const store = useAppStore()
 const emit = defineEmits<{
@@ -116,6 +117,22 @@ const menuOptions: DropdownOption[] = [
       { label: 'SQL(仅结构)', key: 'exp-ddl' },
     ],
   },
+  {
+    label: '复制表 ▸',
+    key: 'dup-menu',
+    children: [
+      { label: '结构 + 数据', key: 'dup-full' },
+      { label: '仅结构', key: 'dup-schema' },
+    ],
+  },
+  {
+    label: '维护 ▸',
+    key: 'maint-menu',
+    children: [
+      { label: 'OPTIMIZE(优化碎片)', key: 'maint-opt' },
+      { label: 'ANALYZE(更新统计)', key: 'maint-ana' },
+    ],
+  },
   { label: '重命名…', key: 'rename' },
   { label: '清空表数据…', key: 'truncate' },
   { label: '删除表…', key: 'drop', props: { style: { color: '#ff6b70' } } },
@@ -124,23 +141,42 @@ const menuOptions: DropdownOption[] = [
   { label: '刷新表列表', key: 'refresh' },
 ]
 
+// ── 新建对象 ────────────────────────────────────────
+const showNewObj = ref(false)
+const newObjConn = ref('')
+const newObjKind = ref<'trigger' | 'procedure' | 'function' | 'view'>('trigger')
+
+function openNewObj(connId: string, kind?: string) {
+  newObjConn.value = connId
+  newObjKind.value = (kind as typeof newObjKind.value) || 'trigger'
+  showNewObj.value = true
+}
+
+// ── 对象右键删除 ──────────────────────────────────────
+const objMenu = ref({ show: false, x: 0, y: 0, connId: '', kind: '', name: '' })
+
+function openObjMenu(e: MouseEvent, connId: string, p: { name: string; kind: string }) {
+  objMenu.value = { show: true, x: e.clientX, y: e.clientY, connId, kind: p.kind, name: p.name }
+}
+
 // ── 表管理操作弹窗(重命名 / 清空 / 删除) ────────────
 const message = useMessage()
 const ops = ref<{
-  mode: 'rename' | 'truncate' | 'drop'
+  mode: 'rename' | 'truncate' | 'drop' | 'duplicate'
   connId: string
   table: string
+  dupWithData?: boolean
 } | null>(null)
 const opsInput = ref('')
 const opsBusy = ref(false)
 
 const opsTitle = computed(() => {
   if (!ops.value) return ''
-  return ops.value.mode === 'rename'
-    ? `重命名表:${ops.value.table}`
-    : ops.value.mode === 'truncate'
-      ? `清空表数据:${ops.value.table}`
-      : `删除表:${ops.value.table}`
+  if (ops.value.mode === 'rename') return `重命名表:${ops.value.table}`
+  if (ops.value.mode === 'truncate') return `清空表数据:${ops.value.table}`
+  if (ops.value.mode === 'duplicate')
+    return `复制表:${ops.value.table}(${ops.value.dupWithData ? '结构+数据' : '仅结构'})`
+  return `删除表:${ops.value.table}`
 })
 
 async function runExport(connId: string, table: string, fmt: 'csv' | 'xlsx' | 'sql-both' | 'sql-ddl') {
@@ -161,6 +197,12 @@ async function runOps() {
       opsBusy.value = true
       await store.renameTable(connId, table, name)
       message.success(`已重命名为 ${name}`)
+    } else if (mode === 'duplicate') {
+      const name = opsInput.value.trim()
+      if (!name || name === table) return
+      opsBusy.value = true
+      await store.duplicateTable(connId, table, name, !!ops.value.dupWithData)
+      message.success(`已复制为 ${name}`)
     } else if (mode === 'truncate') {
       opsBusy.value = true
       await store.truncateTable(connId, table)
@@ -225,6 +267,23 @@ async function onMenuSelect(key: string | number) {
     case 'exp-ddl':
       runExport(t.connId, t.table.name, 'sql-ddl')
       break
+    case 'dup-full':
+    case 'dup-schema':
+      opsInput.value = ''
+      ops.value = { mode: 'duplicate', connId: t.connId, table: t.table.name, dupWithData: key === 'dup-full' }
+      break
+    case 'maint-opt':
+      store.maintainTable(t.connId, t.table.name, 'optimize').then(
+        () => message.success('OPTIMIZE 完成'),
+        (e) => message.error(String(e)),
+      )
+      break
+    case 'maint-ana':
+      store.maintainTable(t.connId, t.table.name, 'analyze').then(
+        () => message.success('ANALYZE 完成'),
+        (e) => message.error(String(e)),
+      )
+      break
     case 'rename':
       opsInput.value = ''
       ops.value = { mode: 'rename', connId: t.connId, table: t.table.name }
@@ -266,6 +325,18 @@ async function onConnMenuSelect(key: string | number) {
   switch (key) {
     case 'new-table':
       store.openDesigner(c.id)
+      break
+    case 'new-trigger':
+      openNewObj(c.id, 'trigger')
+      break
+    case 'new-procedure':
+      openNewObj(c.id, 'procedure')
+      break
+    case 'new-function':
+      openNewObj(c.id, 'function')
+      break
+    case 'new-view':
+      openNewObj(c.id, 'view')
       break
     case 'import-csv':
       emit('import-csv', c.id)
@@ -432,12 +503,16 @@ async function onConnMenuSelect(key: string | number) {
                 v-for="p in procsOf(c.id)"
                 :key="p.name"
                 class="tbl"
-                :title="`${p.kind}: ${p.name}`"
+                :title="`${p.kind}: ${p.name}(右键:删除)`"
                 @click="openProc(c.id, p)"
+                @contextmenu.prevent="openObjMenu($event, c.id, p)"
               >
                 <span class="tbl-icon proc">
                   <Icon :name="p.kind === 'trigger' ? 'zap' : 'code'" :size="11" />
                 </span>{{ p.name }}
+              </div>
+              <div class="tbl add-obj" title="新建触发器/过程/函数/视图" @click.stop="openNewObj(c.id)">
+                <span class="tbl-icon proc"><Icon name="plus" :size="10" /></span>新建对象…
               </div>
             </div>
             <div
@@ -472,6 +547,16 @@ async function onConnMenuSelect(key: string | number) {
       :y="connMenuY"
       :options="[
         { label: '新建表…', key: 'new-table' },
+        {
+          label: '新建对象 ▸',
+          key: 'new-obj',
+          children: [
+            { label: '触发器…', key: 'new-trigger' },
+            { label: '存储过程…', key: 'new-procedure' },
+            { label: '函数…', key: 'new-function' },
+            { label: '视图…', key: 'new-view' },
+          ],
+        },
         { label: '导入 CSV / Excel…', key: 'import-csv' },
         { label: '导入 SQL 文件…', key: 'import-sql' },
         {
@@ -495,6 +580,44 @@ async function onConnMenuSelect(key: string | number) {
     />
   </aside>
 
+  <!-- 新建对象弹窗 -->
+  <NewObjectModal
+    v-model:show="showNewObj"
+    :conn-id="newObjConn || null"
+    :default-kind="newObjKind"
+  />
+  <!-- 对象右键删除 -->
+  <n-popconfirm @positive-click="() => {
+    store.dropObject(objMenu.connId, objMenu.kind, objMenu.name)
+      .then(() => message.success(`已删除 ${objMenu.name}`))
+      .catch((e) => message.error(String(e)))
+  }">
+    <template #trigger>
+      <span style="display:none" />
+    </template>
+  </n-popconfirm>
+  <n-dropdown
+    trigger="manual"
+    :show="objMenu.show"
+    :x="objMenu.x"
+    :y="objMenu.y"
+    :options="[
+      { label: '查看 DDL', key: 'view' },
+      { label: `删除${objMenu.kind === 'trigger' ? '触发器' : objMenu.kind === 'procedure' ? '存储过程' : objMenu.kind === 'function' ? '函数' : '视图'}…`, key: 'del', props: { style: { color: '#ff6b70' } } },
+    ]"
+    placement="bottom-start"
+    @select="(k: string | number) => {
+      const m = objMenu
+      objMenu.show = false
+      if (k === 'view') store.openDdl(m.connId, m.kind, m.name)
+      else if (k === 'del') {
+        store.dropObject(m.connId, m.kind, m.name)
+          .then(() => message.success(`已删除 ${m.name}`))
+          .catch((e) => message.error(String(e)))
+      }
+    }"
+    @clickoutside="objMenu.show = false"
+  />
   <!-- 表管理操作弹窗 -->
   <n-modal
     :show="ops !== null"
@@ -508,6 +631,10 @@ async function onConnMenuSelect(key: string | number) {
       <template v-if="ops.mode === 'rename'">
         <div class="ops-label">新表名</div>
         <n-input v-model:value="opsInput" size="small" class="mono" :placeholder="ops.table" @keyup.enter="runOps" />
+      </template>
+      <template v-else-if="ops.mode === 'duplicate'">
+        <div class="ops-label">新表名(将复制{{ ops.dupWithData ? '结构和数据' : '仅结构' }})</div>
+        <n-input v-model:value="opsInput" size="small" class="mono" :placeholder="`${ops.table}_copy`" @keyup.enter="runOps" />
       </template>
       <template v-else-if="ops.mode === 'truncate'">
         <div class="ops-label">将删除 <b class="mono">{{ ops.table }}</b> 的全部数据(结构保留),不可撤销。确认清空?</div>
@@ -530,7 +657,7 @@ async function onConnMenuSelect(key: string | number) {
           :disabled="ops?.mode === 'drop' && opsInput.trim() !== ops.table"
           @click="runOps"
         >
-          {{ ops?.mode === 'rename' ? '重命名' : ops?.mode === 'truncate' ? '清空数据' : '删除表' }}
+          {{ ops?.mode === 'rename' ? '重命名' : ops?.mode === 'truncate' ? '清空数据' : ops?.mode === 'duplicate' ? '复制' : '删除表' }}
         </n-button>
       </div>
     </template>
@@ -783,6 +910,15 @@ async function onConnMenuSelect(key: string | number) {
 .tbl-icon.proc {
   color: #ff9e64;
   opacity: 0.9;
+}
+.add-obj {
+  color: var(--text-tertiary);
+  border: 1px dashed var(--border-strong);
+  margin-top: 4px;
+}
+.add-obj:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .tbl-empty {
   padding: 4px 8px 4px 18px;
