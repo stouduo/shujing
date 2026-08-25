@@ -331,14 +331,14 @@ function openEdit(info: ConnInfo) {
             <div v-if="activeTab" class="tab-content">
               <EditorTab :key="activeTab.id" :tab="activeTab" />
             </div>
-            <div v-else class="welcome">
+            <div v-else class="welcome" data-tauri-drag-region>
               <div class="logo"><Icon name="database" :size="30" /></div>
               <div class="welcome-title">开始使用 数镜</div>
               <div class="welcome-sub">
                 按 <span class="kbd">⌘T</span> 新建查询,或点击左侧连接浏览数据
               </div>
             </div>
-            <div class="statusbar">
+            <div class="statusbar" data-tauri-drag-region>
               <button class="theme-toggle" :title="theme === 'dark' ? '切换到亮色' : '切换到暗色'" @click="toggleTheme">
                 <Icon name="sun" :size="12" />
               </button>

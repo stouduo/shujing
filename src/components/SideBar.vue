@@ -599,7 +599,6 @@ async function onConnMenuSelect(key: string | number) {
         新建第一个连接
       </button>
     </div>
-    <div class="foot"><span class="kbd">⌘↵</span> 运行查询</div>
     <n-dropdown
       trigger="manual"
       :show="menuShow"
