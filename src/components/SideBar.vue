@@ -46,9 +46,13 @@ const DB_COLOR: Record<string, string> = {
   redis: '#ff6b70',
 }
 
-// ── 多数据库浏览 ──────────────────────────────────────
+// ── 多数据库浏览(树形:连接 → 库列表 → 表) ────────
 const databases = ref<Record<string, string[]>>({})
-const selectedDb = ref<Record<string, string>>({})
+/** 当前展开的库(一个连接同时只展开一个库) */
+const expandedDb = ref<Record<string, string>>({})
+/** 各库的表缓存(键: connId/dbname) */
+const dbTables = ref<Record<string, import('../types').TableMeta[]>>({})
+const dbLoading = ref<Record<string, boolean>>({})
 
 function isMultiDb(c: ConnInfo): boolean {
   return c.dbType === 'mysql' || c.dbType === 'postgres'
@@ -57,37 +61,69 @@ function isMultiDb(c: ConnInfo): boolean {
 async function loadDatabases(connId: string) {
   if (databases.value[connId]) return
   try {
-    const dbs = await api.listDatabases(connId)
-    databases.value[connId] = dbs
+    databases.value[connId] = await api.listDatabases(connId)
+    // 默认展开第一个(或连接配置的默认库)
     const conn = store.connById(connId)
-    const defaultDb = conn?.database || dbs[0] || ''
-    if (defaultDb && !selectedDb.value[connId]) {
-      selectedDb.value[connId] = defaultDb
+    const defaultDb = conn?.database || databases.value[connId]?.[0] || ''
+    if (defaultDb) {
+      expandDb(connId, defaultDb)
     }
   } catch {
     databases.value[connId] = []
   }
 }
 
-async function selectDb(connId: string, db: string) {
-  if (selectedDb.value[connId] === db) return
-  selectedDb.value[connId] = db
-  const live = store.live[connId]
-  if (live) {
-    live.loading = true
-    try {
-      live.tables = await api.listTables(connId, db)
-    } catch (e) {
-      console.warn('加载表失败:', e)
-    } finally {
-      live.loading = false
-    }
+async function expandDb(connId: string, db: string) {
+  // 折叠已展开的
+  if (expandedDb.value[connId] === db) {
+    delete expandedDb.value[connId]
+    return
+  }
+  expandedDb.value[connId] = db
+
+  // 加载该库的表(有缓存则直接用)
+  const key = `${connId}/${db}`
+  if (dbTables.value[key]) {
+    syncTablesToStore(connId, dbTables.value[key])
+    return
+  }
+
+  dbLoading.value[key] = true
+  try {
+    const tables = await api.listTables(connId, db)
+    dbTables.value[key] = tables
+    syncTablesToStore(connId, tables)
+  } catch (e) {
+    console.warn('加载表失败:', e)
+    dbTables.value[key] = []
+  } finally {
+    dbLoading.value[key] = false
   }
 }
 
+function syncTablesToStore(connId: string, tables: import('../types').TableMeta[]) {
+  const live = store.live[connId]
+  if (live) live.tables = tables
+}
+
+/** 当前展开库的表(用于渲染表分组) */
+function currentDbTables(connId: string): import('../types').TableMeta[] {
+  const db = expandedDb.value[connId]
+  if (!db) return []
+  const key = `${connId}/${db}`
+  return dbTables.value[key] ?? []
+}
+
+/** 当前展开库的表(按 kind 过滤) */
+function dbTablesOf(connId: string, kind: string): import('../types').TableMeta[] {
+  return currentDbTables(connId).filter((t) => t.kind === kind)
+}
+
 function toggle(c: ConnInfo) {
-  if (store.live[c.id]) store.disconnect(c.id)
-  else {
+  if (store.live[c.id]) {
+    store.disconnect(c.id)
+    delete expandedDb.value[c.id]
+  } else {
     store.connect(c.id)
     if (isMultiDb(c)) loadDatabases(c.id)
   }
@@ -495,26 +531,98 @@ async function onConnMenuSelect(key: string | number) {
             </div>
           </template>
           <template v-else>
-            <!-- 多数据库:MySQL/PG 显示库选择器 -->
-            <div v-if="isMultiDb(c)" class="db-selector">
-              <select
-                v-if="databases[c.id]?.length"
-                class="db-select"
-                :value="selectedDb[c.id] || ''"
-                @change="selectDb(c.id, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="db in databases[c.id]" :key="db" :value="db">{{ db }}</option>
-              </select>
-              <n-spin v-else size="small" />
-              <n-button
-                quaternary
-                size="tiny"
-                title="刷新数据库列表"
-                @click="() => { delete databases[c.id]; loadDatabases(c.id) }"
-              >
-                <Icon name="refresh" :size="11" />
-              </n-button>
-            </div>
+            <!-- 多数据库:MySQL/PG 显示库列表(树形展开) -->
+            <template v-if="isMultiDb(c)">
+              <n-spin v-if="!databases[c.id]" size="small" class="spin" />
+              <template v-else>
+                <div
+                  v-for="db in databases[c.id]"
+                  :key="db"
+                  class="db-node"
+                >
+                  <div
+                    class="db-row"
+                    :class="{ active: expandedDb[c.id] === db }"
+                    @click="expandDb(c.id, db)"
+                  >
+                    <span class="db-chevron">
+                      {{ expandedDb[c.id] === db ? '▾' : '▸' }}
+                    </span>
+                    <Icon name="database" :size="11" class="db-ic" />
+                    <span class="db-name">{{ db }}</span>
+                    <n-spin v-if="dbLoading[`${c.id}/${db}`]" size="small" style="margin-left:auto" />
+                  </div>
+                  <!-- 展开的库:显示表/视图/程序对象 -->
+                  <template v-if="expandedDb[c.id] === db">
+                    <div class="group db-child" @click="toggleGroup(c.id, 'table')">
+                      <span class="chevron">
+                        <Icon :name="isCollapsed(c.id, 'table') ? 'chevronRight' : 'chevronDown'" :size="11" />
+                      </span>
+                      表 ({{ dbTablesOf(c.id, 'table').length }})
+                    </div>
+                    <div v-show="!isCollapsed(c.id, 'table')" class="group-items db-indent">
+                      <div
+                        v-for="t in dbTablesOf(c.id, 'table')"
+                        :key="t.name"
+                        class="tbl"
+                        :title="t.name"
+                        @click="store.openTable(c.id, t)"
+                        @contextmenu.prevent="openMenu($event, c.id, t)"
+                      >
+                        <span class="tbl-icon"><Icon name="table" :size="12" /></span>{{ t.name }}
+                      </div>
+                      <div v-if="!dbTablesOf(c.id, 'table').length && !dbLoading[`${c.id}/${db}`]" class="tbl-empty">无表</div>
+                    </div>
+                    <div v-if="dbTablesOf(c.id, 'view').length" class="group db-child" @click="toggleGroup(c.id, 'view')">
+                      <span class="chevron">
+                        <Icon :name="isCollapsed(c.id, 'view') ? 'chevronRight' : 'chevronDown'" :size="11" />
+                      </span>
+                      视图 ({{ dbTablesOf(c.id, 'view').length }})
+                    </div>
+                    <div v-show="!isCollapsed(c.id, 'view')" class="group-items db-indent">
+                      <div
+                        v-for="t in dbTablesOf(c.id, 'view')"
+                        :key="t.name"
+                        class="tbl"
+                        :title="t.name"
+                        @click="store.openTable(c.id, t)"
+                        @contextmenu.prevent="openMenu($event, c.id, t)"
+                      >
+                        <span class="tbl-icon view"><Icon name="eye" :size="12" /></span>{{ t.name }}
+                      </div>
+                    </div>
+                    <!-- 程序对象(仅 MySQL/PG) -->
+                    <div v-if="procsOf(c.id).length" class="group db-child" @click="toggleGroup(c.id, 'proc')">
+                      <span class="chevron">
+                        <Icon :name="isCollapsed(c.id, 'proc') ? 'chevronRight' : 'chevronDown'" :size="11" />
+                      </span>
+                      程序对象 ({{ procsOf(c.id).length }})
+                    </div>
+                    <div v-show="!isCollapsed(c.id, 'proc')" class="group-items db-indent">
+                      <div
+                        v-for="pr in procsOf(c.id)"
+                        :key="pr.name"
+                        class="tbl"
+                        :title="`${pr.kind}: ${pr.name}`"
+                        @click="openProc(c.id, pr)"
+                        @contextmenu.prevent="openObjMenu($event, c.id, pr)"
+                      >
+                        <span class="tbl-icon proc">
+                          <Icon :name="pr.kind === 'trigger' ? 'zap' : 'code'" :size="11" />
+                        </span>{{ pr.name }}
+                      </div>
+                      <div class="tbl add-obj" title="新建对象" @click.stop="openNewObj(c.id)">
+                        <span class="tbl-icon proc"><Icon name="plus" :size="10" /></span>新建对象…
+                      </div>
+                    </div>
+                  </template>
+                </div>
+                <!-- 刷新按钮 -->
+                <div class="db-refresh" @click="() => { delete databases[c.id]; delete expandedDb[c.id]; dbTables = {}; loadDatabases(c.id) }">
+                  <Icon name="refresh" :size="11" /> 刷新数据库列表
+                </div>
+              </template>
+            </template>
             <div
               class="group"
               @click="toggleGroup(c.id, 'table')"

@@ -27,6 +27,8 @@ export const useAppStore = defineStore('app', {
     tabs: [] as Tab[],
     activeTabId: '',
     tabSeq: 0,
+    /** 查询标签专用编号(从 1 开始,全部关闭后重置) */
+    querySeq: 0,
     /** 侧栏表分组折叠状态,键为 `${connId}:表` / `${connId}:视图` */
     collapsed: {} as Record<string, boolean>,
     /** 侧栏表名搜索 */
@@ -295,13 +297,12 @@ export const useAppStore = defineStore('app', {
     openQueryTab(connId: string | null = null) {
       const inherit =
         connId ?? this.tabs.find((t) => t.id === this.activeTabId)?.connId ?? null
-      // 标题去重:避免与恢复的旧标签重名
-      let n = this.tabSeq
-      while (this.tabs.some((t) => t.title === `查询 ${n}`)) n++
+      // 独立编号:从 1 开始,全部关闭后重置
+      this.querySeq++
       this.pushTab({
         id: this.nextId(),
         kind: 'query',
-        title: `查询 ${n}`,
+        title: `查询 ${this.querySeq}`,
         connId: inherit,
         sql: '',
         results: [],
@@ -870,6 +871,10 @@ export const useAppStore = defineStore('app', {
       if (this.activeTabId === id) {
         const next = this.tabs[Math.max(0, idx - 1)]
         this.activeTabId = next ? next.id : ''
+      }
+      // 没有查询标签了 → 重置编号
+      if (!this.tabs.some((t) => t.kind === 'query')) {
+        this.querySeq = 0
       }
       if (!this.tabs.length) this.openQueryTab()
     },
