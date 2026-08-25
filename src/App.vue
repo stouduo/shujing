@@ -121,21 +121,40 @@ function commitRename() {
   renamingId.value = ''
 }
 
-const SHORTCUTS: [string, string, string][] = [
-  ['全局', '⌘P', '快速查询(找表 / 筛数据 / 跑 SQL)'],
-  ['全局', '⌘⇧F', '全局数据搜索'],
-  ['全局', '⌘T / ⌘W', '新建 / 关闭标签(中键关闭)'],
-  ['全局', 'F5', '刷新当前表 / 重跑查询'],
-  ['SQL 编辑器', '⌘↵', '运行(有选区只执行选中)'],
-  ['SQL 编辑器', '⌘/', '注释切换'],
-  ['表格编辑', '双击', '编辑单元格'],
-  ['表格编辑', '⌥↵', '多行文本编辑'],
-  ['表格编辑', 'Tab / ⇧Tab', '提交并编辑右 / 左一列'],
-  ['表格编辑', 'Enter / Esc', '提交 / 取消'],
-  ['表格', '点表头', '排序(升→降→取消)'],
-  ['表格', '拖列头右缘', '调整列宽(按表记忆)'],
-  ['表格', '右键', '单元格/列头/行 多种操作'],
-  ['ER 图', '拖节点 / 滚轮 / 拖空白', '移动 / 缩放 / 平移'],
+interface ShortcutGroup {
+  label: string
+  items: [string, string][]
+}
+
+const SHORTCUT_GROUPS: ShortcutGroup[] = [
+  {
+    label: '全局',
+    items: [
+      ['⌘P', '快速查询'],
+      ['⌘⇧F', '全局搜索'],
+      ['⌘T / ⌘W', '新建 / 关闭标签'],
+      ['F5', '刷新 / 重跑'],
+    ],
+  },
+  {
+    label: '编辑器',
+    items: [
+      ['⌘↵', '运行(选中优先)'],
+      ['⌘/', '注释切换'],
+      ['⌘F', '搜索替换'],
+    ],
+  },
+  {
+    label: '表格',
+    items: [
+      ['双击', '编辑'],
+      ['⌥↵', '多行编辑'],
+      ['⇥ / ⇧⇥', '左 / 右移动'],
+      ['↑↓←→', '导航'],
+      ['⌘F', '结果搜索'],
+      ['右键', '更多操作'],
+    ],
+  },
 ]
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
@@ -374,12 +393,14 @@ function openEdit(info: ConnInfo) {
           }"
           @clickoutside="tabCtx.show = false"
         />
-        <n-modal :show="showKeys" preset="card" title="快捷键" :style="{ width: '560px' }" @update:show="(v: boolean) => (showKeys = v)">
-          <div class="keys-table">
-            <div v-for="g in SHORTCUTS" :key="g[1]" class="keys-row">
-              <span class="keys-group">{{ g[0] }}</span>
-              <span class="keys-kbd kbd">{{ g[1] }}</span>
-              <span class="keys-desc">{{ g[2] }}</span>
+        <n-modal :show="showKeys" preset="card" title="快捷键" :style="{ width: '420px' }" @update:show="(v: boolean) => (showKeys = v)">
+          <div class="keys-compact">
+            <div v-for="g in SHORTCUT_GROUPS" :key="g.label" class="keys-group-block">
+              <div class="keys-group-title">{{ g.label }}</div>
+              <div v-for="item in g.items" :key="item[0]" class="keys-item">
+                <span class="kbd">{{ item[0] }}</span>
+                <span class="keys-desc">{{ item[1] }}</span>
+              </div>
             </div>
           </div>
         </n-modal>
@@ -452,34 +473,32 @@ function openEdit(info: ConnInfo) {
   color: var(--warn);
   background: var(--bg-hover);
 }
-.keys-table {
+.keys-compact {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 12px;
 }
-.keys-row {
+.keys-group-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.keys-group-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+.keys-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 8px;
-  border-radius: 7px;
-}
-.keys-row:hover {
-  background: var(--bg-hover);
-}
-.keys-group {
-  width: 76px;
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-.keys-kbd {
-  width: 110px;
-  flex-shrink: 0;
-  text-align: center;
+  gap: 10px;
+  padding: 2px 0;
 }
 .keys-desc {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 .tab-icon {
