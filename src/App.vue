@@ -393,17 +393,25 @@ function openEdit(info: ConnInfo) {
           }"
           @clickoutside="tabCtx.show = false"
         />
-        <n-modal :show="showKeys" preset="card" title="快捷键" :style="{ width: '420px' }" @update:show="(v: boolean) => (showKeys = v)">
-          <div class="keys-compact">
-            <div v-for="g in SHORTCUT_GROUPS" :key="g.label" class="keys-group-block">
-              <div class="keys-group-title">{{ g.label }}</div>
-              <div v-for="item in g.items" :key="item[0]" class="keys-item">
-                <span class="kbd">{{ item[0] }}</span>
-                <span class="keys-desc">{{ item[1] }}</span>
+        <Teleport to="body">
+          <div v-if="showKeys" class="keys-overlay" @click.self="showKeys = false">
+            <div class="keys-popup">
+              <div class="keys-popup-head">
+                <span class="keys-popup-title">快捷键</span>
+                <button class="keys-popup-close" @click="showKeys = false">×</button>
+              </div>
+              <div class="keys-compact">
+                <div v-for="g in SHORTCUT_GROUPS" :key="g.label" class="keys-group-block">
+                  <div class="keys-group-title">{{ g.label }}</div>
+                  <div v-for="item in g.items" :key="item[0]" class="keys-item">
+                    <span class="kbd">{{ item[0] }}</span>
+                    <span class="keys-desc">{{ item[1] }}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </n-modal>
+        </Teleport>
         <QuickOpen v-model:show="showQuickOpen" />
         <GlobalSearchModal v-model:show="showGlobalSearch" />
       </n-dialog-provider>
@@ -471,6 +479,46 @@ function openEdit(info: ConnInfo) {
 }
 .theme-toggle:hover {
   color: var(--warn);
+  background: var(--bg-hover);
+}
+.keys-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.keys-popup {
+  width: 400px;
+  background: var(--bg-elevated, #222226);
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.13));
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  padding: 16px 20px;
+}
+.keys-popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.keys-popup-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+.keys-popup-close {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.keys-popup-close:hover {
+  color: var(--text);
   background: var(--bg-hover);
 }
 .keys-compact {
