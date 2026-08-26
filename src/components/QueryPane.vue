@@ -84,6 +84,45 @@ watch(
 
 const connOptions = computed(() => store.saved.map((c) => ({ label: c.name, value: c.id })))
 
+// 多库连接:加载该服务器的数据库列表
+const dbOptions = ref<{ label: string; value: string }[]>([])
+const selectedDb = ref<string | null>(null)
+
+watch(
+  () => props.tab.connId,
+  async (connId) => {
+    selectedDb.value = null
+    dbOptions.value = []
+    if (!connId) return
+    const conn = store.connById(connId)
+    if (!conn || (conn.dbType !== 'mysql' && conn.dbType !== 'postgres')) return
+    try {
+      const dbs = await api.listDatabases(connId)
+      dbOptions.value = dbs.map((d) => ({ label: d, value: d }))
+      // 默认选中已保存的库或第一个
+      const defaultDb = conn.database || dbs[0] || null
+      if (defaultDb) {
+        selectedDb.value = defaultDb
+        // 切换到该库
+        await api.runSql(connId, 'USE `' + defaultDb + '`')
+      }
+    } catch {
+      // 静默失败
+    }
+  },
+  { immediate: true },
+)
+
+async function onDbChange(db: string) {
+  selectedDb.value = db
+  if (!props.tab.connId) return
+  try {
+    await api.runSql(props.tab.connId, 'USE `' + db + '`')
+  } catch {
+    // USE 失败不影响 information_schema 查询
+  }
+}
+
 const dialect = computed<DbType>(() => store.connById(props.tab.connId ?? '')?.dbType ?? 'mysql')
 
 const tables = computed<string[]>(() => {
@@ -388,6 +427,15 @@ function applyHistory(key: string | number) {
         placeholder="选择连接"
         class="conn-sel"
       />
+      <n-select
+        v-if="dbOptions.length"
+        v-model:value="selectedDb"
+        size="small"
+        :options="dbOptions"
+        placeholder="选择数据库"
+        class="db-sel"
+        @update:value="onDbChange"
+      />
       <div class="seg-group">
         <n-button size="small" quaternary title="格式化 SQL (美化排版)" @click="beautify">
           <Icon name="zap" :size="13" /> 格式化
@@ -601,7 +649,10 @@ function applyHistory(key: string | number) {
   font-weight: 500;
 }
 .conn-sel {
-  width: 200px;
+  width: 180px;
+}
+.db-sel {
+  width: 150px;
 }
 .spacer {
   flex: 1;

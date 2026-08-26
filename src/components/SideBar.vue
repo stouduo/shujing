@@ -153,28 +153,24 @@ function dbTablesOf(connId: string, kind: string): import('../types').TableMeta[
 }
 
 /** 点击连接行:展开/收起内容(不触发断开) */
+// 纯展开/收起(不重新加载任何数据)
+const connExpanded = ref<Record<string, boolean>>({})
+
 async function toggle(c: ConnInfo) {
-  if (store.live[c.id]) {
-    // 已连接:切换展开状态(折叠但不断开)
-    const expanded = store.live[c.id]
-    if (expanded) {
-      // 检查是否已展开(有 expandedDb 或 tables 数据)
-      if (databases.value[c.id] || expanded.tables.length) {
-        // 收起:清空显示数据但保持连接
-        delete expandedDb.value[c.id]
-        delete databases.value[c.id]
-        expanded.tables = []
-      } else {
-        // 展开:重新加载数据库列表
-        if (isMultiDb(c)) loadDatabases(c.id)
-      }
-    }
-  } else {
-    // 未连接:先连接再展开
+  if (connExpanded.value[c.id]) {
+    // 收起:只改显示状态
+    delete connExpanded.value[c.id]
+    return
+  }
+  // 展开
+  connExpanded.value[c.id] = true
+  // 如果未连接,连接
+  if (!store.live[c.id]) {
     await store.connect(c.id)
-    if (store.live[c.id] && isMultiDb(c)) {
-      loadDatabases(c.id)
-    }
+  }
+  // 如果是多库且没有库列表,加载库列表(首次)
+  if (store.live[c.id] && isMultiDb(c) && !databases.value[c.id]) {
+    loadDatabases(c.id)
   }
 }
 
@@ -296,6 +292,28 @@ function openNewObj(connId: string, kind?: string) {
   newObjConn.value = connId
   newObjKind.value = (kind as typeof newObjKind.value) || 'trigger'
   showNewObj.value = true
+}
+
+// ── 数据库右键菜单(局部刷新表列表) ──────────────────
+const dbMenu = ref({ show: false, x: 0, y: 0, connId: '', db: '' })
+
+function openDbMenu(e: MouseEvent, connId: string, db: string) {
+  dbMenu.value = { show: true, x: e.clientX, y: e.clientY, connId, db }
+}
+
+async function refreshTablesOnly(connId: string, db: string) {
+  const key = `${connId}/${db}`
+  dbLoading.value[key] = true
+  try {
+    const tables = await api.listTables(connId, db)
+    dbTables.value[key] = tables
+    syncTablesToStore(connId, tables)
+    await switchDatabase(connId, db)
+  } catch (e) {
+    console.warn('刷新表列表失败:', e)
+  } finally {
+    dbLoading.value[key] = false
+  }
 }
 
 // ── 对象右键删除 ──────────────────────────────────────
@@ -515,11 +533,15 @@ async function onConnMenuSelect(key: string | number) {
     case 'disconnect':
       store.disconnect(c.id)
       break
-    case 'refresh-dbs':
-      delete databases.value[c.id]
-      delete expandedDb.value[c.id]
-      loadDatabases(c.id)
+    case 'refresh-dbs': {
+      // 局部刷新:只重新拉库列表
+      databases.value[c.id] = await api.listDatabases(c.id)
+      const curDb = expandedDb.value[c.id]
+      if (curDb) {
+        await refreshTablesOnly(c.id, curDb)
+      }
       break
+    }
   }
 }
 </script>
@@ -597,7 +619,7 @@ async function onConnMenuSelect(key: string | number) {
             </n-popconfirm>
           </span>
         </div>
-        <div v-if="store.live[c.id]" class="tables">
+        <div v-if="connExpanded[c.id] && store.live[c.id]" class="tables">
           <n-spin v-if="store.live[c.id].loading" size="small" class="spin" />
           <!-- Redis:键空间分组 -->
           <template v-if="isRedisConn(c)">
@@ -620,6 +642,7 @@ async function onConnMenuSelect(key: string | number) {
                     class="db-row"
                     :class="{ active: expandedDb[c.id] === db }"
                     @click="expandDb(c.id, db)"
+                    @contextmenu.prevent="openDbMenu($event, c.id, db)"
                   >
                     <span class="db-chevron">
                       {{ expandedDb[c.id] === db ? '▾' : '▸' }}
@@ -844,6 +867,23 @@ async function onConnMenuSelect(key: string | number) {
     v-model:show="showNewObj"
     :conn-id="newObjConn || null"
     :default-kind="newObjKind"
+  />
+  <!-- 数据库右键菜单 -->
+  <n-dropdown
+    trigger="manual"
+    :show="dbMenu.show"
+    :x="dbMenu.x"
+    :y="dbMenu.y"
+    :options="[
+      { label: '刷新表列表', key: 'refresh-tables' },
+    ]"
+    placement="bottom-start"
+    @select="(k: string | number) => {
+      const m = dbMenu
+      dbMenu.show = false
+      if (k === 'refresh-tables') refreshTablesOnly(m.connId, m.db)
+    }"
+    @clickoutside="dbMenu.show = false"
   />
   <!-- 对象右键删除 -->
   <n-popconfirm @positive-click="() => {
