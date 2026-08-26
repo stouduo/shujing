@@ -150,37 +150,60 @@ const editableQuery = computed<string | null>(() => {
   if (!props.tab.connId) return null
   const conn = store.connById(props.tab.connId)
   if (!conn || conn.dbType === 'redis' || conn.readOnly) return null
-  const sql = props.tab.sql.trim()
+  // 去掉注释后检测,避免前导注释导致漏判
+  const sql = props.tab.sql
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\n]*/g, '')
+    .trim()
   if (!/^select\s/i.test(sql)) return null
   if (/\b(join|group\s+by|union|having|into)\b/i.test(sql)) return null
-  const m = sql.match(/^select\s+[^;]+?\s+from\s+[`"[]?(\w+)[`"\]]?/is)
-  return m?.[1] ?? null
+  // 表名可能是 `db`.`tbl` / public.tbl / "TBL" / 别名前缀,取首个 FROM 后的 token,
+  // 去引号并取最后一个标识段(按当前连接库解析)
+  const m = sql.match(/\bfrom\s+([^\s,();]+)/i)
+  if (!m) return null
+  const seg = m[1].replace(/[`"[\]]/g, '').split('.').pop()
+  return seg || null
 })
 
 const eqPkCols = ref<string[]>([])
+const pkLoadedKey = ref('')
 const eqChanges = ref<Record<number, Record<string, string | null>>>({})
 const eqDeleted = ref<Record<number, true>>({})
 const eqSaving = ref(false)
 
-const eqEditable = computed(() => editableQuery.value !== null && eqPkCols.value.length > 0)
+/** 可编辑条件:识别出单表 SELECT 且表有主键,且结果集包含全部主键列(否则无法定位行) */
+const eqEditable = computed(
+  () =>
+    editableQuery.value !== null &&
+    eqPkCols.value.length > 0 &&
+    eqPkCols.value.every((c) => activeResult.value?.columns.includes(c) ?? false),
+)
 
+// 主键列懒加载:SQL 或结果集变化时尝试拉取;失败(如连接未建立)则等下次结果到达重试
 watch(
-  editableQuery,
-  async (t) => {
-    eqPkCols.value = []
-    eqChanges.value = {}
-    eqDeleted.value = {}
+  [editableQuery, () => activeResult.value?.columns],
+  async ([t]) => {
     if (!t || !props.tab.connId) return
+    const cid = props.tab.connId
+    const key = `${cid}/${t}`
+    if (key === pkLoadedKey.value) return
+    pkLoadedKey.value = key
     try {
-      const st = await api.getTableStructure(props.tab.connId, t)
+      const st = await api.getTableStructure(cid, t)
       eqPkCols.value = st.columns.filter((c) => c.key === 'PRI').map((c) => c.name)
-      store.rememberCols(props.tab.connId, t, st.columns.map((c) => c.name))
+      store.rememberCols(cid, t, st.columns.map((c) => c.name))
     } catch {
-      /* 无主键则不可编辑 */
+      pkLoadedKey.value = ''
     }
   },
   { immediate: true },
 )
+
+// 换表后旧修改不再适用
+watch(editableQuery, () => {
+  eqChanges.value = {}
+  eqDeleted.value = {}
+})
 
 watch(
   () => props.tab.results,
@@ -301,6 +324,15 @@ function onMemSort(col: string, dir?: 'asc' | 'desc' | null) {
     memSort.value = { key: col, dir: 'asc' }
   }
 }
+
+// 筛选/排序会重排行序,未保存修改的行号将错位 —— 有待保存修改时直接重置并提示
+watch([memFilter, () => memSort.value.key, () => memSort.value.dir], () => {
+  if (eqChangeCount.value > 0) {
+    eqChanges.value = {}
+    eqDeleted.value = {}
+    message.info('结果内筛选/排序已变化,未保存的修改已重置')
+  }
+})
 
 const meta = computed(() => {
   const r = activeResult.value
@@ -520,6 +552,13 @@ function applyHistory(key: string | number) {
                   <Icon name="search" :size="11" />
                 </template>
               </n-input>
+              <span class="ra-label">导出:</span>
+              <ResultActions
+                v-if="activeResult.rows.length"
+                :result="viewResult ?? activeResult"
+                :base-name="editableQuery ?? 'query'"
+                :table-name="editableQuery ?? undefined"
+              />
             </div>
             <div class="results-flex">
               <div class="results-panel">
@@ -547,13 +586,6 @@ function applyHistory(key: string | number) {
                     else eqDeleted[r] = true
                   }"
                 />
-                <div class="panel-actions">
-                  <ResultActions
-                  :result="viewResult ?? activeResult"
-                  base-name="editableQuery ?? 'query'"
-                  :table-name="editableQuery ?? undefined"
-                />
-                </div>
               </div>
               <RecordPanel
                 v-if="selectedRow !== null && viewResult && viewResult.rows[selectedRow]"
@@ -798,22 +830,13 @@ function applyHistory(key: string | number) {
     var(--panel-inset),
     var(--panel-shadow);
 }
-.panel-actions {
-  position: absolute;
-  top: 5px;
-  right: 8px;
-  z-index: 5;
-  display: flex;
-  padding: 2px;
-  border-radius: 8px;
-  background: rgba(28, 28, 33, 0.85);
-  border: 1px solid var(--border);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  backdrop-filter: blur(8px);
+.ra-label {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
-.results-panel:hover .panel-actions {
-  opacity: 1;
+.set-row :deep(.actions) {
+  flex-shrink: 0;
 }
 .err {
   margin: 12px;

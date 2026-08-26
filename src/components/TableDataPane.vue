@@ -427,9 +427,6 @@ function onFilterCol(col: string, op = '=') {
             @copy-row="(r: number) => store.copyRowToNew(tab.id, r)"
             @filter-value="(c: string, v: string) => onFilterValue(c, v)"
           />
-          <div class="panel-actions">
-            <ResultActions :result="tab.result" :base-name="tab.table" />
-          </div>
         </div>
         <RecordPanel
           v-if="selectedRow !== null && tab.result && tab.result.rows[selectedRow]"
@@ -489,6 +486,10 @@ function onFilterCol(col: string, op = '=') {
           @update:value="(v: number) => store.setTablePageSize(tab.id, v)"
         />
         <span v-if="rangeText" class="range">第 {{ rangeText }} 行</span>
+      </div>
+      <div v-if="tab.result && tab.result.rows.length" class="pager-mid">
+        <span class="ra-label">导出:</span>
+        <ResultActions :result="tab.result" :base-name="tab.table" />
       </div>
       <div class="pager-right">
         <n-button
@@ -738,22 +739,16 @@ function onFilterCol(col: string, op = '=') {
     var(--panel-inset),
     var(--panel-shadow);
 }
-.panel-actions {
-  position: absolute;
-  top: 5px;
-  right: 8px;
-  z-index: 6;
+.pager-mid {
   display: flex;
-  padding: 2px;
-  border-radius: 8px;
-  background: rgba(28, 28, 33, 0.85);
-  border: 1px solid var(--border);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  backdrop-filter: blur(8px);
+  align-items: center;
+  gap: 4px;
 }
-.grid.panel:hover .panel-actions {
-  opacity: 1;
+.ra-label {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  margin-right: 2px;
 }
 .loading {
   flex: 1;

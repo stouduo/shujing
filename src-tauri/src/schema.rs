@@ -598,14 +598,46 @@ impl Backend {
         }
     }
 
+/// 解析 MySQL 目标库:显式指定的 > 连接配置的 > 当前会话 USE 的(SELECT DATABASE())
+async fn resolve_mysql_db(
+    conn: &mut mysql_async::Conn,
+    info: &ConnInfo,
+    explicit: Option<&str>,
+) -> Result<String, String> {
+    use mysql_async::prelude::*;
+    if let Some(d) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
+        return Ok(d.to_string());
+    }
+    if let Some(d) = info.database.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        return Ok(d.to_string());
+    }
+    let mut result = conn
+        .query_iter("SELECT DATABASE()")
+        .await
+        .map_err(es)?;
+    let mut cur: Option<String> = None;
+    result
+        .for_each(|row| {
+            if cur.is_none() {
+                if let Some(mysql_async::Value::Bytes(b)) = row.unwrap().first() {
+                    let s = String::from_utf8_lossy(b).into_owned();
+                    if !s.is_empty() {
+                        cur = Some(s);
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(es)?;
+    cur.ok_or_else(|| "连接未指定数据库,请先在左侧选择要操作的库".to_string())
+}
+
     pub async fn get_table_structure(&mut self, info: &ConnInfo, table: &str) -> Result<TableStructure, String> {
         match self {
             Backend::Sqlite(conn) => struct_sqlite(conn, table),
             Backend::MySql(conn) => {
-                let db = info.database.as_deref().map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .ok_or_else(|| "连接未指定数据库".to_string())?;
-                struct_mysql(conn, db, table).await
+                let db = Self::resolve_mysql_db(conn, info, None).await?;
+                struct_mysql(conn, &db, table).await
             }
             Backend::Pg(client) => struct_pg(client, table).await,
             Backend::Redis(_) => Err("Redis 无表结构".into()),
@@ -625,10 +657,8 @@ impl Backend {
         match self {
             Backend::Sqlite(conn) => fk_sqlite(conn),
             Backend::MySql(conn) => {
-                let db = info.database.as_deref().map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .ok_or_else(|| "连接未指定数据库".to_string())?;
-                fk_mysql(conn, db).await
+                let db = Self::resolve_mysql_db(conn, info, None).await?;
+                fk_mysql(conn, &db).await
             }
             Backend::Pg(client) => fk_pg(client).await,
             Backend::Redis(_) => Ok(vec![]),
