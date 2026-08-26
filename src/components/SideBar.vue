@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   NButton,
   NDropdown,
@@ -57,6 +57,20 @@ const dbLoading = ref<Record<string, boolean>>({})
 function isMultiDb(c: ConnInfo): boolean {
   return c.dbType === 'mysql' || c.dbType === 'postgres'
 }
+
+// 监听连接状态:会话恢复后自动加载数据库列表
+watch(
+  () => Object.keys(store.live),
+  (liveIds) => {
+    for (const connId of liveIds) {
+      const conn = store.connById(connId)
+      if (conn && isMultiDb(conn) && !databases.value[connId]) {
+        loadDatabases(connId)
+      }
+    }
+  },
+  { immediate: true },
+)
 
 async function loadDatabases(connId: string) {
   if (databases.value[connId]) return
