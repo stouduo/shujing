@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, inject, ref, watch } from 'vue'
 import { NButton, NDropdown, NInput, NSelect, NSplit, useMessage, type DropdownOption } from 'naive-ui'
 import * as api from '../api'
 import { useAppStore } from '../stores/app'
+import { histSql, histDb } from '../stores/helpers'
 import type { ExecResult, OrderDir, QueryTab } from '../types'
 import ResultsGrid from './ResultsGrid.vue'
 import ResultActions from './ResultActions.vue'
@@ -101,14 +102,10 @@ watch(
       if (!store.live[connId]) await store.connect(connId)
       const dbs = await api.listDatabases(connId)
       dbOptions.value = dbs.map((d) => ({ label: d, value: d }))
-      // 默认选中:配置的库 > 最近使用的库 > 第一个
-      const defaultDb =
-        (conn.database || '').trim() || store.lastDbs[connId] || dbs[0] || null
-      if (defaultDb && dbs.includes(defaultDb)) {
-        selectedDb.value = defaultDb
-        await switchSql(conn.dbType, defaultDb)
-        store.rememberLastDb(connId, defaultDb)
-      }
+      // 下拉框仅"显示"最可信的库,不主动切换/不写记忆:
+      // 配置的库(握手即选中)> 使用记录里的库 > 仅一个库时的唯一选择
+      const candidates = [(conn.database || '').trim(), store.lastDbs[connId], dbs.length === 1 ? dbs[0] : '']
+      selectedDb.value = candidates.find((c) => c && dbs.includes(c)) ?? null
     } catch {
       // 连接失败等,保持空列表
     }
@@ -448,15 +445,31 @@ async function explain() {
 }
 
 const historyOptions = computed<DropdownOption[]>(() =>
-  store.history.slice(0, 15).map((s, i) => ({
+  store.history.slice(0, 15).map((h, i) => ({
     key: i,
-    label: s.replace(/\s+/g, ' ').slice(0, 72) || '(空)',
+    label:
+      (histDb(h) ? `[${histDb(h)}] ` : '') +
+      (histSql(h).replace(/\s+/g, ' ').slice(0, 60) || '(空)'),
   })),
 )
 
-function applyHistory(key: string | number) {
-  const sql = store.history[Number(key)]
-  if (sql !== undefined) props.tab.sql = sql
+async function applyHistory(key: string | number) {
+  const h = store.history[Number(key)]
+  if (h === undefined) return
+  props.tab.sql = histSql(h)
+  // 恢复这条 SQL 执行时所在的库
+  const cid = props.tab.connId
+  const db = histDb(h)
+  if (!cid || !db) return
+  const conn = store.connById(cid)
+  if (!conn || (conn.dbType !== 'mysql' && conn.dbType !== 'postgres')) return
+  try {
+    await switchSql(conn.dbType, db)
+  } catch {
+    /* 切换失败则按当前上下文执行 */
+  }
+  selectedDb.value = db
+  store.rememberLastDb(cid, db)
 }
 </script>
 

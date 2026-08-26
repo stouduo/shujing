@@ -15,3 +15,15 @@ export function tableRef(
   return quoteIdent(tab.database, dbType) + '.' + quoteIdent(tab.table, dbType)
 }
 
+/** 历史条目:新版带库信息,旧版为纯 SQL 字符串(读取需兼容) */
+export type HistoryEntry = string | { sql: string; db?: string | null }
+
+export function histSql(h: HistoryEntry): string {
+  return typeof h === 'string' ? h : h.sql
+}
+
+export function histDb(h: HistoryEntry): string | null {
+  return typeof h === 'string' ? null : h.db ?? null
+}
+
+

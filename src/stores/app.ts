@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import * as api from '../api'
 import { reviveTab, serializeTab } from '../panes/registry'
 import { tableActions } from './tableActions'
-import { quoteIdent } from './helpers'
+import { quoteIdent, histSql } from './helpers'
 import type { ColumnSpec, ConnInfo, DbType, TableMeta, TableTab, Tab } from '../types'
 
 interface LiveState {
@@ -33,8 +33,8 @@ export const useAppStore = defineStore('app', {
     collapsed: {} as Record<string, boolean>,
     /** 侧栏表名搜索 */
     tableFilter: '',
-    /** 查询历史(最近 30 条) */
-    history: [] as string[],
+    /** 查询历史(最近 30 条,带执行时的库上下文) */
+    history: [] as import('./helpers').HistoryEntry[],
     /** 已知的表列(键 connId/table),用于 SQL 编辑器列名补全 */
     tableCols: {} as Record<string, string[]>,
     /** SQL 片段 */
@@ -94,6 +94,8 @@ export const useAppStore = defineStore('app', {
         activeTabId: this.activeTabId,
         liveConnIds: Object.keys(this.live),
         lastDbs: this.lastDbs,
+        // lastDbsV=2 才可信:旧版会话里的 lastDbs 是"默认选第一个库"策略写入的,不可信
+        lastDbsV: 2,
         tabs,
       }
       try {
@@ -115,8 +117,8 @@ export const useAppStore = defineStore('app', {
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         const d = JSON.parse(raw) as any
         if (d?.v !== 1 || !Array.isArray(d.tabs) || !d.tabs.length) return false
-        // 恢复各连接最近使用的库
-        if (d.lastDbs && typeof d.lastDbs === 'object') {
+        // 恢复各连接最近使用的库(仅接受新版格式,旧数据可能被默认选库策略污染)
+        if (d.lastDbsV === 2 && d.lastDbs && typeof d.lastDbs === 'object') {
           for (const [k, v] of Object.entries(d.lastDbs)) {
             if (typeof v === 'string') this.lastDbs[k] = v
           }
@@ -265,29 +267,34 @@ export const useAppStore = defineStore('app', {
       this.lastDbs[id] = db
     },
 
-    /** 未配置默认库的 MySQL/PG 连接:重连后自动 USE/SET 到最近使用的库(无记忆则取第一个可用库兜底) */
+    /**
+     * 未配置默认库的 MySQL/PG 连接:重连后的库上下文策略
+     * 1) 有使用记录(lastDbs)→ 恢复到上次的库
+     * 2) 无记录但服务器只有一个可用库 → 选它
+     * 3) 其余情况 → 不选任何库,由用户显式选择
+     */
     async restoreLastDatabase(id: string) {
       const info = this.connById(id)
       if (!info || (info.dbType !== 'mysql' && info.dbType !== 'postgres')) return
       const cfgDb = (info.database ?? '').trim()
       if (cfgDb) return
-      let last = this.lastDbs[id] ?? ''
+      let target = this.lastDbs[id] ?? ''
       try {
-        if (!last) {
+        if (!target) {
           const dbs = await api.listDatabases(id).catch(() => [] as string[])
-          // 库列表由后端过滤过系统库,取第一个作为兜底上下文
-          last = dbs[0] ?? ''
+          if (dbs.length === 1) target = dbs[0]
         }
-        if (!last) return
+        if (!target) return
         await api.runSql(
           id,
           info.dbType === 'mysql'
-            ? 'USE `' + last.replace(/`/g, '``') + '`'
-            : 'SET search_path TO "' + last.replace(/"/g, '""') + '"',
+            ? 'USE `' + target.replace(/`/g, '``') + '`'
+            : 'SET search_path TO "' + target.replace(/"/g, '""') + '"',
         )
-        this.lastDbs[id] = last
+        this.lastDbs[id] = target
       } catch {
-        // 上次的库可能已被删除;此时不选库,让具体语句自己暴露错误
+        // 记录的库可能已被删除;保持未选中状态,让用户显式选择
+        delete this.lastDbs[id]
       }
     },
 
@@ -972,7 +979,10 @@ export const useAppStore = defineStore('app', {
           const m = execSql.match(/FROM\s+[`"[]?(\w+)/i)
           if (m?.[1]) tab.title = m[1]
         }
-        this.history = [execSql, ...this.history.filter((s) => s !== execSql)].slice(0, 30)
+        this.history = [
+          { sql: execSql, db: this.lastDbs[tab.connId] ?? null },
+          ...this.history.filter((s) => histSql(s) !== execSql),
+        ].slice(0, 30)
         try {
           localStorage.setItem('dblens_history', JSON.stringify(this.history))
         } catch {
