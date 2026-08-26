@@ -97,30 +97,44 @@ watch(
     const conn = store.connById(connId)
     if (!conn || (conn.dbType !== 'mysql' && conn.dbType !== 'postgres')) return
     try {
+      // 重启后连接可能已断开:先确保连上,否则库列表静默为空
+      if (!store.live[connId]) await store.connect(connId)
       const dbs = await api.listDatabases(connId)
       dbOptions.value = dbs.map((d) => ({ label: d, value: d }))
-      // 默认选中已保存的库或第一个
-      const defaultDb = conn.database || dbs[0] || null
-      if (defaultDb) {
+      // 默认选中:配置的库 > 最近使用的库 > 第一个
+      const defaultDb =
+        (conn.database || '').trim() || store.lastDbs[connId] || dbs[0] || null
+      if (defaultDb && dbs.includes(defaultDb)) {
         selectedDb.value = defaultDb
-        // 切换到该库
-        await api.runSql(connId, 'USE `' + defaultDb + '`')
+        await switchSql(conn.dbType, defaultDb)
+        store.rememberLastDb(connId, defaultDb)
       }
     } catch {
-      // 静默失败
+      // 连接失败等,保持空列表
     }
   },
   { immediate: true },
 )
 
+/** 切换当前会话数据库上下文 */
+function switchSql(dbType: DbType | undefined, db: string): Promise<unknown> {
+  if (!dbType) return Promise.resolve()
+  if (dbType === 'mysql') {
+    return api.runSql(props.tab.connId!, 'USE `' + db.replace(/`/g, '``') + '`')
+  }
+  return api.runSql(props.tab.connId!, 'SET search_path TO "' + db.replace(/"/g, '""') + '"')
+}
+
 async function onDbChange(db: string) {
   selectedDb.value = db
-  if (!props.tab.connId) return
+  const cid = props.tab.connId
+  if (!cid) return
   try {
-    await api.runSql(props.tab.connId, 'USE `' + db + '`')
+    await switchSql(dialect.value, db)
   } catch {
-    // USE 失败不影响 information_schema 查询
+    // 切库失败不影响 information_schema 查询
   }
+  store.rememberLastDb(cid, db)
 }
 
 const dialect = computed<DbType>(() => store.connById(props.tab.connId ?? '')?.dbType ?? 'mysql')

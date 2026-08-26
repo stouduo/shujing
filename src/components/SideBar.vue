@@ -122,21 +122,21 @@ function syncTablesToStore(connId: string, tables: import('../types').TableMeta[
   if (live) live.tables = tables
 }
 
-/** 切换数据库上下文(MySQL 发 USE dbname) */
+/** 切换数据库上下文(MySQL 发 USE dbname,PG 设 search_path),并记忆为该连接的最近库 */
 async function switchDatabase(connId: string, db: string) {
   const conn = store.connById(connId)
   if (!conn) return
-  // 更新保存的连接信息,让后续查询在此库上下文执行
-  const saved = store.saved.find((c) => c.id === connId)
-  if (saved) saved.database = db
-  // MySQL: 发 USE dbname 切换库
-  if (conn.dbType === 'mysql') {
-    try {
+  try {
+    if (conn.dbType === 'mysql') {
       await api.runSql(connId, 'USE `' + db + '`')
-    } catch {
-      /* USE 失败不影响 information_schema 查表 */
+    } else if (conn.dbType === 'postgres') {
+      await api.runSql(connId, 'SET search_path TO "' + db.replace(/"/g, '""') + '"')
     }
+  } catch {
+    /* 切库失败不影响 information_schema 查表 */
   }
+  // 记忆最近使用的库:重启重连后自动回到这里(不改连接配置本身)
+  store.rememberLastDb(connId, db)
 }
 
 /** 当前展开库的表(用于渲染表分组) */

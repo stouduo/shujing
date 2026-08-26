@@ -39,6 +39,8 @@ export const useAppStore = defineStore('app', {
     tableCols: {} as Record<string, string[]>,
     /** SQL 片段 */
     snippets: [] as { id: string; name: string; sql: string }[],
+    /** 每个连接最近使用的库(键 connId),重启重连后自动恢复上下文 */
+    lastDbs: {} as Record<string, string>,
   }),
   getters: {
     connById: (state) => (id: string): ConnInfo | undefined =>
@@ -91,6 +93,7 @@ export const useAppStore = defineStore('app', {
         v: 1,
         activeTabId: this.activeTabId,
         liveConnIds: Object.keys(this.live),
+        lastDbs: this.lastDbs,
         tabs,
       }
       try {
@@ -112,6 +115,12 @@ export const useAppStore = defineStore('app', {
         /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         const d = JSON.parse(raw) as any
         if (d?.v !== 1 || !Array.isArray(d.tabs) || !d.tabs.length) return false
+        // 恢复各连接最近使用的库
+        if (d.lastDbs && typeof d.lastDbs === 'object') {
+          for (const [k, v] of Object.entries(d.lastDbs)) {
+            if (typeof v === 'string') this.lastDbs[k] = v
+          }
+        }
         for (const st of d.tabs) {
           const tab = reviveTab(st)
           if (tab) this.tabs.push(tab)
@@ -234,6 +243,8 @@ export const useAppStore = defineStore('app', {
         try {
           const r = await api.connect(info)
           this.live[id] = { tables: [], loading: true, version: r.version }
+          // 未配置默认库的多库连接:回到上次使用的库,避免 "No database selected"
+          await this.restoreLastDatabase(id)
           await this.loadTables(id)
         } catch (e) {
           console.warn('连接失败:', e)
@@ -245,6 +256,32 @@ export const useAppStore = defineStore('app', {
         await task
       } finally {
         delete this.connecting[id]
+      }
+    },
+
+    /** 记录连接最近使用的库(切换库时调用,会话持久化) */
+    rememberLastDb(id: string, db: string) {
+      if (!id || !db) return
+      this.lastDbs[id] = db
+    },
+
+    /** 未配置默认库的 MySQL/PG 连接:重连后自动 USE/SET 回上次使用的库 */
+    async restoreLastDatabase(id: string) {
+      const info = this.connById(id)
+      if (!info || (info.dbType !== 'mysql' && info.dbType !== 'postgres')) return
+      const cfgDb = (info.database ?? '').trim()
+      if (cfgDb) return
+      const last = this.lastDbs[id]
+      if (!last) return
+      try {
+        await api.runSql(
+          id,
+          info.dbType === 'mysql'
+            ? 'USE `' + last.replace(/`/g, '``') + '`'
+            : 'SET search_path TO "' + last.replace(/"/g, '""') + '"',
+        )
+      } catch {
+        // 上次的库可能已被删除,不影响连接本身
       }
     },
 
