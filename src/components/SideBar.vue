@@ -946,9 +946,73 @@ async function onConnMenuSelect(key: string | number) {
 .conn {
   margin-bottom: 2px;
 }
-.db-ic {
-  flex-shrink: 0;
+.db-node {
+  margin-bottom: 0;
 }
+.db-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 22px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: all 0.12s ease;
+  border-left: 2px solid transparent;
+}
+.db-row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.db-row.active {
+  color: var(--accent);
+  background: rgba(10, 132, 255, 0.08);
+  border-left-color: var(--accent);
+}
+.db-chevron {
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+.db-ic {
+  color: var(--accent);
+  opacity: 0.8;
+}
+.db-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-child {
+  padding-left: 30px !important;
+}
+.db-indent {
+  padding-left: 34px !important;
+}
+.db-refresh {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px 4px 22px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin-top: 2px;
+}
+.db-refresh:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+.db-expanded {
+  animation: fade-in 0.15s ease;
+}
+/* .db-ic 在上方已定义 */
 .row {
   display: flex;
   align-items: center;
