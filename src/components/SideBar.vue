@@ -85,6 +85,7 @@ async function expandDb(connId: string, db: string) {
   const key = `${connId}/${db}`
   if (dbTables.value[key]) {
     syncTablesToStore(connId, dbTables.value[key])
+    switchDatabase(connId, db)
     return
   }
 
@@ -93,6 +94,7 @@ async function expandDb(connId: string, db: string) {
     const tables = await api.listTables(connId, db)
     dbTables.value[key] = tables
     syncTablesToStore(connId, tables)
+    switchDatabase(connId, db)
   } catch (e) {
     console.warn('加载表失败:', e)
     dbTables.value[key] = []
@@ -104,6 +106,23 @@ async function expandDb(connId: string, db: string) {
 function syncTablesToStore(connId: string, tables: import('../types').TableMeta[]) {
   const live = store.live[connId]
   if (live) live.tables = tables
+}
+
+/** 切换数据库上下文(MySQL 发 USE dbname) */
+async function switchDatabase(connId: string, db: string) {
+  const conn = store.connById(connId)
+  if (!conn) return
+  // 更新保存的连接信息,让后续查询在此库上下文执行
+  const saved = store.saved.find((c) => c.id === connId)
+  if (saved) saved.database = db
+  // MySQL: 发 USE dbname 切换库
+  if (conn.dbType === 'mysql') {
+    try {
+      await api.runSql(connId, 'USE `' + db + '`')
+    } catch {
+      /* USE 失败不影响 information_schema 查表 */
+    }
+  }
 }
 
 /** 当前展开库的表(用于渲染表分组) */
@@ -119,13 +138,16 @@ function dbTablesOf(connId: string, kind: string): import('../types').TableMeta[
   return currentDbTables(connId).filter((t) => t.kind === kind)
 }
 
-function toggle(c: ConnInfo) {
+async function toggle(c: ConnInfo) {
   if (store.live[c.id]) {
     store.disconnect(c.id)
     delete expandedDb.value[c.id]
+    delete databases.value[c.id]
   } else {
-    store.connect(c.id)
-    if (isMultiDb(c)) loadDatabases(c.id)
+    await store.connect(c.id)
+    if (store.live[c.id] && isMultiDb(c)) {
+      loadDatabases(c.id)
+    }
   }
 }
 
@@ -623,6 +645,8 @@ async function onConnMenuSelect(key: string | number) {
                 </div>
               </template>
             </template>
+            <!-- 单库(SQLite):直接显示表,多库时不渲染 -->
+            <template v-else>
             <div
               class="group"
               @click="toggleGroup(c.id, 'table')"
@@ -699,6 +723,7 @@ async function onConnMenuSelect(key: string | number) {
             >
               {{ store.tableFilter ? '没有匹配的表' : '没有表' }}
             </div>
+            </template>
           </template>
         </div>
       </div>

@@ -29,13 +29,13 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
             let port = info.port.unwrap_or(3306);
             let user = req(&info.user, "缺少用户名")?;
             let pass = info.password.as_deref().unwrap_or("");
-            let db = req(&info.database, "缺少数据库名")?;
+            let db = info.database.as_deref().map(str::trim).filter(|s| !s.is_empty());
             let opts = mysql_async::OptsBuilder::default()
                 .ip_or_hostname(host)
                 .tcp_port(port)
                 .user(Some(user))
                 .pass(Some(pass))
-                .db_name(Some(db));
+                .db_name(db);
             let conn = mysql_async::Conn::new(opts)
                 .await
                 .map_err(|e| format!("连接 MySQL 失败: {e}"))?;
@@ -69,7 +69,8 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
             let port = info.port.unwrap_or(5432);
             let user = req(&info.user, "缺少用户名")?;
             let pass = info.password.as_deref().unwrap_or("");
-            let db = req(&info.database, "缺少数据库名")?;
+            // 数据库可选:不填默认连 postgres 库
+            let db = info.database.as_deref().map(str::trim).filter(|s| !s.is_empty()).unwrap_or("postgres");
             let cfg = format!(
                 "host={} port={} user={} password={} dbname={} connect_timeout=8 application_name=数镜",
                 pg_quote(host),
