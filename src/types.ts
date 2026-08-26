@@ -119,6 +119,8 @@ export interface TableFilter {
 export interface TableTab extends TabBase {
   kind: 'table'
   table: string
+  /** 表所属库(多库树打开时记录;读操作据此限定 库.表) */
+  database?: string | null
   page: number
   pageSize: number
   total: number | null

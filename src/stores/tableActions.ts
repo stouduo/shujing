@@ -3,19 +3,41 @@
  * 从 app.ts 拆出,通过展开合并进主 store。
  */
 import * as api from '../api'
-import { quoteIdent } from './helpers'
+import { quoteIdent, tableRef } from './helpers'
 import type { TableTab, Tab } from '../types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Store = any
 
 export const tableActions = {
+  /** 表操作前把会话上下文切到表所属库(多库连接防跨库误查/误写) */
+  async ensureTableContext(this: Store, tab: TableTab) {
+    const cid = tab.connId
+    if (!cid || !tab.database || !this.lastDbs) return
+    if (this.lastDbs[cid] === tab.database) return
+    const conn = this.connById(cid)
+    if (!conn || (conn.dbType !== 'mysql' && conn.dbType !== 'postgres')) return
+    try {
+      await api.runSql(
+        cid,
+        conn.dbType === 'mysql'
+          ? 'USE `' + tab.database.replace(/`/g, '``') + '`'
+          : 'SET search_path TO "' + tab.database.replace(/"/g, '""') + '"',
+      )
+      this.rememberLastDb(cid, tab.database)
+    } catch {
+      /* 库可能已删除;具体语句会自己报错 */
+    }
+  },
+
   /** 拉取主键列与外键(决定可编辑性 + FK 候选值) */
   async loadPkCols(this: Store, id: string) {
     const tab = this.tabs.find((t: Tab) => t.id === id)
     if (!tab || tab.kind !== 'table' || !tab.connId) return
     if (!this.live[tab.connId]) await this.connect(tab.connId)
     if (!this.live[tab.connId]) return
+    // 结构按裸表名解析依赖当前库,先切到表自己的库
+    await this.ensureTableContext(tab)
     try {
       const st = await api.getTableStructure(tab.connId, tab.table)
       tab.pkCols = st.columns.filter((c) => c.key === 'PRI').map((c) => c.name)
@@ -50,7 +72,7 @@ export const tableActions = {
   tablePageSql(this: Store, tab: TableTab): string {
     const conn = this.connById(tab.connId ?? '')
     const dbType = conn?.dbType ?? 'mysql'
-    let sql = `SELECT * FROM ${quoteIdent(tab.table, dbType)}${this.whereOf(tab)}`
+    let sql = `SELECT * FROM ${tableRef(tab, dbType)}${this.whereOf(tab)}`
     if (tab.orderKey) {
       sql += ` ORDER BY ${quoteIdent(tab.orderKey, dbType)} ${tab.orderDir === 'asc' ? 'ASC' : 'DESC'}`
     }
@@ -99,7 +121,7 @@ export const tableActions = {
       const dbType = conn?.dbType ?? 'mysql'
       const rs = await api.runSql(
         tab.connId,
-        `SELECT COUNT(*) FROM ${quoteIdent(tab.table, dbType)}${this.whereOf(tab)}`,
+        `SELECT COUNT(*) FROM ${tableRef(tab, dbType)}${this.whereOf(tab)}`,
         1,
       )
       tab.total = Number(rs[0]?.rows[0]?.[0] ?? 0)
@@ -264,6 +286,8 @@ export const tableActions = {
       )
       .filter((cols: [string, string][]) => cols.length > 0)
     if (!updates.length && !deletes.length && !inserts.length) return
+    // applyChanges 按裸表名回写,依赖会话当前库 —— 先确保上下文正确
+    await this.ensureTableContext(tab)
     tab.loading = true
     tab.error = null
     try {

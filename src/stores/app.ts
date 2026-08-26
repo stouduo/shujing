@@ -355,7 +355,7 @@ export const useAppStore = defineStore('app', {
       })
     },
 
-    async openTable(connId: string, table: TableMeta) {
+    async openTable(connId: string, table: TableMeta, database?: string | null) {
       const conn = this.connById(connId)
       if (!conn) return
       const id = this.nextId()
@@ -365,6 +365,7 @@ export const useAppStore = defineStore('app', {
         title: table.name,
         connId,
         table: table.name,
+        database: database ?? null,
         page: 1,
         pageSize: 100,
         total: null,

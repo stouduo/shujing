@@ -239,7 +239,7 @@ function openProc(connId: string, p: TableMeta) {
 const menuShow = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
-const menuTarget = ref<{ connId: string; table: TableMeta } | null>(null)
+const menuTarget = ref<{ connId: string; table: TableMeta; database?: string | null } | null>(null)
 
 const menuOptions: DropdownOption[] = [
   { label: '打开数据', key: 'data' },
@@ -390,8 +390,8 @@ async function runOps() {
   }
 }
 
-function openMenu(e: MouseEvent, connId: string, table: TableMeta) {
-  menuTarget.value = { connId, table }
+function openMenu(e: MouseEvent, connId: string, table: TableMeta, database?: string | null) {
+  menuTarget.value = { connId, table, database: database ?? null }
   menuShow.value = true
   menuX.value = e.clientX
   menuY.value = e.clientY
@@ -403,7 +403,7 @@ async function onMenuSelect(key: string | number) {
   if (!t) return
   switch (key) {
     case 'data':
-      store.openTable(t.connId, t.table)
+      store.openTable(t.connId, t.table, t.database)
       break
     case 'structure':
       store.openStructure(t.connId, t.table.name)
@@ -667,8 +667,8 @@ async function onConnMenuSelect(key: string | number) {
                         :key="t.name"
                         class="tbl"
                         :title="t.name"
-                        @click="store.openTable(c.id, t)"
-                        @contextmenu.prevent="openMenu($event, c.id, t)"
+                        @click="store.openTable(c.id, t, db)"
+                        @contextmenu.prevent="openMenu($event, c.id, t, db)"
                       >
                         <span class="tbl-icon"><Icon name="table" :size="12" /></span>{{ t.name }}
                       </div>
@@ -686,8 +686,8 @@ async function onConnMenuSelect(key: string | number) {
                         :key="t.name"
                         class="tbl"
                         :title="t.name"
-                        @click="store.openTable(c.id, t)"
-                        @contextmenu.prevent="openMenu($event, c.id, t)"
+                        @click="store.openTable(c.id, t, db)"
+                        @contextmenu.prevent="openMenu($event, c.id, t, db)"
                       >
                         <span class="tbl-icon view"><Icon name="eye" :size="12" /></span>{{ t.name }}
                       </div>

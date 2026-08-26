@@ -61,6 +61,7 @@ export const PANE_DEFS: PaneDef[] = [
       t.kind === 'table'
         ? {
             table: t.table,
+            database: t.database ?? null,
             page: t.page,
             pageSize: t.pageSize,
             orderKey: t.orderKey,
@@ -76,6 +77,7 @@ export const PANE_DEFS: PaneDef[] = [
       title: str(st.title, str(st.table, '表')),
       connId: nstr(st.connId),
       table: str(st.table),
+      database: nstr(st.database),
       page: num(st.page, 1),
       pageSize: num(st.pageSize, 100),
       total: null,
