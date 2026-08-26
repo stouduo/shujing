@@ -76,10 +76,12 @@ async function loadDatabases(connId: string) {
   if (databases.value[connId]) return
   try {
     databases.value[connId] = await api.listDatabases(connId)
-    // 默认展开第一个(或连接配置的默认库)
+    // 默认展开第一个(或连接配置/最近使用的库)
     const conn = store.connById(connId)
-    const defaultDb = conn?.database || databases.value[connId]?.[0] || ''
+    const defaultDb =
+      (conn?.database || '').trim() || store.lastDbs[connId] || databases.value[connId]?.[0] || ''
     if (defaultDb) {
+      if (!databases.value[connId]?.includes(defaultDb)) return
       expandDb(connId, defaultDb)
     }
   } catch {

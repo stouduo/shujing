@@ -70,7 +70,7 @@ export const useAppStore = defineStore('app', {
         this.snippets = []
       }
       await this.loadSaved()
-      if (!this.restoreSession()) this.openQueryTab()
+      if (!(await this.restoreSession())) this.openQueryTab()
       // 会话自动落盘:状态变化后防抖 800ms
       let timer: ReturnType<typeof setTimeout> | undefined
       this.$subscribe(() => {
@@ -103,7 +103,7 @@ export const useAppStore = defineStore('app', {
       }
     },
 
-    restoreSession(): boolean {
+    async restoreSession(): Promise<boolean> {
       let raw: string | null = null
       try {
         raw = localStorage.getItem(SESSION_KEY)
@@ -131,10 +131,10 @@ export const useAppStore = defineStore('app', {
           : this.tabs[0].id
         this.tabSeq = Math.max(0, ...this.tabs.map((t) => Number(t.id.slice(1)) || 0))
 
-        // 恢复上次在线的连接
-        for (const cid of Array.isArray(d.liveConnIds) ? d.liveConnIds : []) {
-          this.connect(cid)
-        }
+        // 恢复上次在线的连接:等全部连接(含库上下文恢复)就绪后再刷新标签,
+        // 否则表数据查询会跑在 USE 之前,报 No database selected
+        const connIds = Array.isArray(d.liveConnIds) ? d.liveConnIds : []
+        await Promise.all(connIds.map((cid: string) => this.connect(cid).catch(() => {})))
         // 各标签重新拉数据
         for (const t of this.tabs) {
           if (t.kind === 'table' && t.connId) {
@@ -265,23 +265,29 @@ export const useAppStore = defineStore('app', {
       this.lastDbs[id] = db
     },
 
-    /** 未配置默认库的 MySQL/PG 连接:重连后自动 USE/SET 回上次使用的库 */
+    /** 未配置默认库的 MySQL/PG 连接:重连后自动 USE/SET 到最近使用的库(无记忆则取第一个可用库兜底) */
     async restoreLastDatabase(id: string) {
       const info = this.connById(id)
       if (!info || (info.dbType !== 'mysql' && info.dbType !== 'postgres')) return
       const cfgDb = (info.database ?? '').trim()
       if (cfgDb) return
-      const last = this.lastDbs[id]
-      if (!last) return
+      let last = this.lastDbs[id] ?? ''
       try {
+        if (!last) {
+          const dbs = await api.listDatabases(id).catch(() => [] as string[])
+          // 库列表由后端过滤过系统库,取第一个作为兜底上下文
+          last = dbs[0] ?? ''
+        }
+        if (!last) return
         await api.runSql(
           id,
           info.dbType === 'mysql'
             ? 'USE `' + last.replace(/`/g, '``') + '`'
             : 'SET search_path TO "' + last.replace(/"/g, '""') + '"',
         )
+        this.lastDbs[id] = last
       } catch {
-        // 上次的库可能已被删除,不影响连接本身
+        // 上次的库可能已被删除;此时不选库,让具体语句自己暴露错误
       }
     },
 
