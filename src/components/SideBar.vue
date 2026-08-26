@@ -152,7 +152,34 @@ function dbTablesOf(connId: string, kind: string): import('../types').TableMeta[
   return currentDbTables(connId).filter((t) => t.kind === kind)
 }
 
+/** 点击连接行:展开/收起内容(不触发断开) */
 async function toggle(c: ConnInfo) {
+  if (store.live[c.id]) {
+    // 已连接:切换展开状态(折叠但不断开)
+    const expanded = store.live[c.id]
+    if (expanded) {
+      // 检查是否已展开(有 expandedDb 或 tables 数据)
+      if (databases.value[c.id] || expanded.tables.length) {
+        // 收起:清空显示数据但保持连接
+        delete expandedDb.value[c.id]
+        delete databases.value[c.id]
+        expanded.tables = []
+      } else {
+        // 展开:重新加载数据库列表
+        if (isMultiDb(c)) loadDatabases(c.id)
+      }
+    }
+  } else {
+    // 未连接:先连接再展开
+    await store.connect(c.id)
+    if (store.live[c.id] && isMultiDb(c)) {
+      loadDatabases(c.id)
+    }
+  }
+}
+
+/** 右侧电源按钮:真正的连接/断开 */
+async function powerToggle(c: ConnInfo) {
   if (store.live[c.id]) {
     store.disconnect(c.id)
     delete expandedDb.value[c.id]
@@ -488,6 +515,11 @@ async function onConnMenuSelect(key: string | number) {
     case 'disconnect':
       store.disconnect(c.id)
       break
+    case 'refresh-dbs':
+      delete databases.value[c.id]
+      delete expandedDb.value[c.id]
+      loadDatabases(c.id)
+      break
   }
 }
 </script>
@@ -544,7 +576,15 @@ async function onConnMenuSelect(key: string | number) {
             >
               <Icon name="pencil" :size="12" />
             </button>
-            <button v-else class="op" title="断开" @click="store.disconnect(c.id)">
+            <button v-else class="op" title="断开连接" @click.stop="powerToggle(c)">
+              <Icon name="power" :size="12" />
+            </button>
+            <button
+              v-if="!store.live[c.id]"
+              class="op"
+              title="连接"
+              @click.stop="powerToggle(c)"
+            >
               <Icon name="power" :size="12" />
             </button>
             <n-popconfirm @positive-click="store.removeConn(c.id)">
@@ -654,10 +694,7 @@ async function onConnMenuSelect(key: string | number) {
                   </template>
                 </div>
                 <!-- 刷新按钮 -->
-                <div class="db-refresh" @click="() => { delete databases[c.id]; delete expandedDb[c.id]; dbTables = {}; loadDatabases(c.id) }">
-                  <Icon name="refresh" :size="11" /> 刷新数据库列表
-                </div>
-              </template>
+                </template>
             </template>
             <!-- 单库(SQLite):直接显示表,多库时不渲染 -->
             <template v-else>
@@ -786,9 +823,10 @@ async function onConnMenuSelect(key: string | number) {
         { label: '查看 ER 图', key: 'er' },
         { label: '搜索数据…', key: 'search-data' },
         { label: '新建查询', key: 'query' },
+        { label: '刷新数据库列表', key: 'refresh-dbs' },
         { type: 'divider', key: 'd1' },
         { label: '编辑连接', key: 'edit' },
-        { label: '断开', key: 'disconnect' },
+        { label: '断开连接', key: 'disconnect' },
       ]"
       placement="bottom-start"
       @select="onConnMenuSelect"
@@ -968,8 +1006,6 @@ async function onConnMenuSelect(key: string | number) {
 }
 .db-row.active {
   color: var(--accent);
-  background: rgba(10, 132, 255, 0.08);
-  border-left-color: var(--accent);
 }
 .db-chevron {
   width: 12px;

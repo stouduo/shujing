@@ -53,7 +53,7 @@ function runWithParams() {
   const sql = props.tab.sql.trim()
   const params = extractParams(sql)
   if (!params.length) {
-    run()
+    store.runQuery(props.tab.id)
     return
   }
   // 检查是否已有值(上次输入)
