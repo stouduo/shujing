@@ -744,9 +744,13 @@ defineExpose({
   outline: 2px solid var(--accent);
   outline-offset: -2px;
   z-index: 4;
+  background: rgba(10, 132, 255, 0.06);
 }
 .row.search-hit {
-  background: rgba(255, 213, 74, 0.08) !important;
+  background: rgba(255, 213, 74, 0.06) !important;
+}
+.row.search-hit .cell {
+  border-bottom-color: rgba(255, 213, 74, 0.15);
 }
 .row.deleted {
   background: var(--del-bg);

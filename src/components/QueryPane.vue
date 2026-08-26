@@ -591,8 +591,8 @@ function applyHistory(key: string | number) {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 48px;
-  padding: 0 12px;
+  height: 42px;
+  padding: 0 10px;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;

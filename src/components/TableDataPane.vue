@@ -530,8 +530,8 @@ function onFilterCol(col: string, op = '=') {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 44px;
-  padding: 0 12px;
+  height: 42px;
+  padding: 0 10px;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;

@@ -1047,8 +1047,10 @@ async function onConnMenuSelect(key: string | number) {
   padding: 0 6px 0 8px;
   border-radius: 6px;
   color: var(--text-tertiary);
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
   cursor: pointer;
   user-select: none;
   transition: color 0.12s ease, background-color 0.12s ease;
