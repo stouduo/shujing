@@ -1140,6 +1140,7 @@ async function onConnMenuSelect(key: string | number) {
   border-color: var(--accent);
 }
 .add-obj {
+  margin-left: 24px;
   color: var(--text-tertiary);
   border: 1px dashed var(--border-strong);
   margin-top: 4px;
