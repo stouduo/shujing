@@ -347,7 +347,7 @@ function openEdit(info: ConnInfo) {
               </button>
               <div class="tabbar-spacer" data-tauri-drag-region />
             </div>
-            <div v-if="activeTab" class="tab-content">
+            <div v-if="activeTab" class="tab-content" :key="activeTab.id">
               <EditorTab :key="activeTab.id" :tab="activeTab" />
             </div>
             <div v-else class="welcome" data-tauri-drag-region>

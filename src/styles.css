@@ -317,3 +317,52 @@ html.in-tauri .sidebar .brand {
 .mono {
   font-family: var(--mono);
 }
+
+
+/* ═══ 交互流畅性 ═══ */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in-scale {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* 面板内容渐入 */
+.grid-area {
+  animation: fade-in 0.12s ease;
+}
+
+/* 弹窗渐入 */
+.keys-popup {
+  animation: fade-in-scale 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 表格编辑框弹出 */
+.cell-input {
+  animation: fade-in 0.08s ease;
+}
+
+/* 平滑滚动 */
+.grid, .keys-compact, .rp-body {
+  scroll-behavior: smooth;
+}
+
+/* 减少动画(无障碍) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 侧栏数据库展开内容渐入 */
+.db-node .group-items {
+  animation: fade-in 0.15s ease;
+}
