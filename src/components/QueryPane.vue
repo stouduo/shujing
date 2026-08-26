@@ -556,7 +556,7 @@ function applyHistory(key: string | number) {
               <ResultActions
                 v-if="activeResult.rows.length"
                 :result="viewResult ?? activeResult"
-                :base-name="editableQuery ?? 'query'"
+                :base-name="(editableQuery ?? 'query') + (tab.results.length > 1 ? '_' + (tab.activeSet + 1) : '')"
                 :table-name="editableQuery ?? undefined"
               />
             </div>

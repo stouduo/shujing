@@ -4,6 +4,7 @@ import { NButton, NInput, NPopover, NSelect, NSpin, useMessage } from 'naive-ui'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import * as api from '../api'
 import { exportTableSql, isTauri, writeTextFile } from '../api'
+import { exportFileName } from '../filename'
 import { useAppStore } from '../stores/app'
 import type { TableTab } from '../types'
 import ResultsGrid from './ResultsGrid.vue'
@@ -107,7 +108,7 @@ async function exportSql() {
   try {
     const path = await saveDialog({
       title: '导出表为 SQL',
-      defaultPath: `${props.tab.table}.sql`,
+      defaultPath: exportFileName(props.tab.table, 'sql'),
       filters: [{ name: 'SQL', extensions: ['sql'] }],
     })
     if (typeof path === 'string' && path) {

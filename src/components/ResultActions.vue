@@ -2,6 +2,7 @@
 import { NButton, useMessage } from 'naive-ui'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { isTauri, writeBinaryFile, writeTextFile } from '../api'
+import { exportFileName } from '../filename'
 import type { ExecResult } from '../types'
 
 const props = defineProps<{
@@ -94,19 +95,20 @@ async function exportXlsx() {
   const u8 = new Uint8Array(buf)
   if (!isTauri) {
     // 浏览器预览:直接触发下载
+    const name = exportFileName(props.baseName, 'xlsx')
     const url = URL.createObjectURL(new Blob([u8], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `${props.baseName ?? 'result'}.xlsx`
+    a.download = name
     a.click()
     URL.revokeObjectURL(url)
-    message.success(`已下载 xlsx(${props.result.rows.length} 行)`)
+    message.success(`已下载 ${name}(${props.result.rows.length} 行)`)
     return
   }
   try {
     const path = await saveDialog({
       title: '导出 Excel',
-      defaultPath: `${props.baseName ?? 'result'}.xlsx`,
+      defaultPath: exportFileName(props.baseName, 'xlsx'),
       filters: [{ name: 'Excel', extensions: ['xlsx'] }],
     })
     if (typeof path === 'string' && path) {
@@ -132,7 +134,7 @@ async function exportCsv() {
   try {
     const path = await saveDialog({
       title: '导出 CSV',
-      defaultPath: `${props.baseName ?? 'result'}.csv`,
+      defaultPath: exportFileName(props.baseName, 'csv'),
       filters: [{ name: 'CSV', extensions: ['csv'] }],
     })
     if (typeof path === 'string' && path) {
