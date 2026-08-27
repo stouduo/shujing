@@ -469,9 +469,19 @@ async function onMenuSelect(key: string | number) {
     case 'query':
       store.openQueryTab(t.connId)
       break
-    case 'refresh':
-      store.refreshTables(t.connId)
+    case 'refresh': {
+      // 局部刷新:刷该表所在库的表列表,不整连接 reload
+      if (t.database) {
+        await refreshTablesOnly(t.connId, t.database)
+      } else if (store.live[t.connId]) {
+        try {
+          store.live[t.connId].tables = await api.listTables(t.connId)
+        } catch (e) {
+          console.warn('刷新表列表失败:', e)
+        }
+      }
       break
+    }
   }
 }
 
