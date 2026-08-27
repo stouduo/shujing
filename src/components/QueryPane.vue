@@ -178,6 +178,7 @@ const editableQuery = computed<string | null>(() => {
 
 const eqPkCols = ref<string[]>([])
 const pkLoadedKey = ref('')
+const eqColComments = ref<Record<string, string>>({})
 const eqChanges = ref<Record<number, Record<string, string | null>>>({})
 const eqDeleted = ref<Record<number, true>>({})
 const eqSaving = ref(false)
@@ -202,6 +203,7 @@ watch(
     try {
       const st = await api.getTableStructure(cid, t)
       eqPkCols.value = st.columns.filter((c) => c.key === 'PRI').map((c) => c.name)
+      eqColComments.value = Object.fromEntries(st.columns.map((c) => [c.name, c.comment ?? '']))
       store.rememberCols(cid, t, st.columns.map((c) => c.name))
     } catch {
       pkLoadedKey.value = ''
@@ -602,6 +604,7 @@ async function applyHistory(key: string | number) {
                   :deleted-rows="eqDeleted"
                   :table-name="editableQuery ?? undefined"
                   :mysql-dialect="dialect === 'mysql'"
+                  :col-comments="eqColComments"
                   @sort="onMemSort"
                   @select-row="(r: number) => (selectedRow = selectedRow === r ? null : r)"
                   @cell-change="(r: number, c: string, v: string | null) => {

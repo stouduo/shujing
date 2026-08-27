@@ -39,6 +39,8 @@ const props = defineProps<{
   colWidthKey?: string
   /** MySQL 方言(反引号) */
   mysqlDialect?: boolean
+  /** 列注释(列头悬停提示) */
+  colComments?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +55,7 @@ const emit = defineEmits<{
   (e: 'check-row', rowIndex: number, val: boolean): void
   (e: 'check-page', all: boolean): void
   (e: 'copy-row', rowIndex: number): void
+  (e: 'batch-set', col: string, value: string | null): void
 }>()
 
 const message = useMessage()
@@ -192,6 +195,37 @@ function sortIcon(col: string): string {
   return props.sortDir === 'asc' ? '▲' : '▼'
 }
 
+/** 列头悬停提示:列名 + 数据库注释 */
+function headTitle(col: string): string {
+  const c = props.colComments?.[col]?.trim()
+  return c ? `${col} — ${c}` : col
+}
+
+// ── 勾选行批量设置列值 ────────────────────────────────
+const batchCol = ref('')
+const batchVal = ref('')
+const batchNull = ref(false)
+const showBatch = ref(false)
+
+function openBatch(col: string) {
+  const n = Object.keys(props.checkedRows ?? {}).length
+  if (!n) {
+    message.warning('请先勾选要批量修改的行(行首复选框)')
+    return
+  }
+  batchCol.value = col
+  batchVal.value = ''
+  batchNull.value = false
+  showBatch.value = true
+}
+
+function confirmBatch() {
+  const col = batchCol.value
+  showBatch.value = false
+  if (!col) return
+  emit('batch-set', col, batchNull.value ? null : batchVal.value)
+}
+
 // ── 单元格编辑 ────────────────────────────────────────
 function pendingValue(r: number, c: number): string | null | undefined {
   const row = props.changes?.[r]
@@ -264,6 +298,7 @@ const menus = useContextMenus({
   sortKey: () => props.sortKey,
   sortDir: () => props.sortDir ?? 'asc',
   hasTableName: () => !!props.tableName,
+  hasCheckboxes: () => !!props.checkedRows,
   cellActions: {
     copyCell: async (r, c) => {
       try { await navigator.clipboard.writeText(displayValue(r, c) ?? '') } catch { /* 不可用 */ }
@@ -305,6 +340,7 @@ const menus = useContextMenus({
     togglePin: (col) => togglePin(col),
     filterCol: (col, op) => emit('filter-col', col, op),
     showStats: (col) => showColStats(col),
+    batchSet: (col) => openBatch(col),
   },
 })
 const { ctx, headCtx, ctxOptions, headCtxOptions, openCtx, openHeadCtx } = menus
@@ -474,7 +510,7 @@ defineExpose({
               width: widths[i] + 'px',
               left: pinned.includes(columns[i]) ? (pinnedLeft[columns[i]] ?? 0) + 'px' : undefined,
             }"
-            :title="columns[i]"
+            :title="headTitle(columns[i])"
             @click="sortable && emit('sort', columns[i])"
             @contextmenu="openHeadCtx($event, columns[i])"
           >
@@ -627,6 +663,34 @@ defineExpose({
         <div class="ml-footer">
           <n-button size="small" @click="mlEdit = null">取消</n-button>
           <n-button size="small" type="primary" @click="commitMlEdit">提交</n-button>
+        </div>
+      </template>
+    </n-modal>
+    <n-modal
+      :show="showBatch"
+      preset="card"
+      :title="`勾选行统一设置:${batchCol}`"
+      :style="{ width: '460px' }"
+      @update:show="(v: boolean) => (showBatch = v)"
+    >
+      <div class="batch-hint">
+        将把已勾选的 <b>{{ Object.keys(checkedRows ?? {}).length }}</b> 行的
+        <span class="mono">{{ batchCol }}</span> 列统一设置为下面的值(保存更改时生效)
+      </div>
+      <input
+        v-model="batchVal"
+        class="batch-input mono"
+        :disabled="batchNull"
+        placeholder="输入统一设置的值"
+        @keyup.enter="confirmBatch"
+      />
+      <label class="batch-null">
+        <input v-model="batchNull" type="checkbox" /> 设为 NULL
+      </label>
+      <template #footer>
+        <div class="ml-footer">
+          <n-button size="small" @click="showBatch = false">取消</n-button>
+          <n-button size="small" type="primary" @click="confirmBatch">应用到勾选行</n-button>
         </div>
       </template>
     </n-modal>
@@ -958,5 +1022,36 @@ defineExpose({
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+.batch-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.batch-hint b {
+  color: var(--accent);
+}
+.batch-input {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 13px;
+  padding: 0 8px;
+  outline: none;
+}
+.batch-input:focus {
+  border-color: var(--accent);
+}
+.batch-null {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
 }
 </style>

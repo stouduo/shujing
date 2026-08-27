@@ -41,6 +41,7 @@ export const tableActions = {
     try {
       const st = await api.getTableStructure(tab.connId, tab.table)
       tab.pkCols = st.columns.filter((c) => c.key === 'PRI').map((c) => c.name)
+      tab.colComments = Object.fromEntries(st.columns.map((c) => [c.name, c.comment ?? '']))
       this.rememberCols(tab.connId, tab.table, st.columns.map((c) => c.name))
     } catch {
       tab.pkCols = []
@@ -251,6 +252,20 @@ export const tableActions = {
       deletes: Object.keys(tab.deletedRows).length,
       inserts: (tab.newRows as Record<string, string>[]).filter((r: Record<string, string>) => Object.keys(r).length > 0).length,
     }
+  },
+
+  /** 勾选行批量设置某列(统一值或 NULL),写入未保存变更,随保存一起提交 */
+  batchSetChecked(this: Store, id: string, col: string, value: string | null) {
+    const tab = this.tabs.find((t: Tab) => t.id === id)
+    if (!tab || tab.kind !== 'table') return 0
+    const checked = Object.keys(tab.checkedRows as Record<number, true>).map(Number)
+    let n = 0
+    for (const r of checked) {
+      if (!tab.changes[r]) tab.changes[r] = {}
+      tab.changes[r][col] = value
+      n++
+    }
+    return n
   },
 
   discardChanges(this: Store, id: string) {

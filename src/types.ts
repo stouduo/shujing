@@ -121,6 +121,8 @@ export interface TableTab extends TabBase {
   table: string
   /** 表所属库(多库树打开时记录;读操作据此限定 库.表) */
   database?: string | null
+  /** 列注释(列头悬停提示) */
+  colComments?: Record<string, string>
   page: number
   pageSize: number
   total: number | null

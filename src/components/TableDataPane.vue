@@ -416,6 +416,7 @@ function onFilterCol(col: string, op = '=') {
             :col-width-key="`${tab.connId}/${tab.table}`"
             :mysql-dialect="store.connById(tab.connId ?? '')?.dbType === 'mysql'"
             :row-height="rowHeight"
+            :col-comments="tab.colComments ?? {}"
             @sort="(col: string, dir?: 'asc' | 'desc' | null) => store.sortTable(tab.id, col, dir)"
             @cell-change="(r: number, c: string, v: string | null) => store.setCellChange(tab.id, r, c, v)"
             @delete-row="(r: number) => store.deleteRow(tab.id, r)"
@@ -427,6 +428,7 @@ function onFilterCol(col: string, op = '=') {
             @check-page="(all: boolean) => store.checkPage(tab.id, all)"
             @copy-row="(r: number) => store.copyRowToNew(tab.id, r)"
             @filter-value="(c: string, v: string) => onFilterValue(c, v)"
+            @batch-set="(c: string, v: string | null) => store.batchSetChecked(tab.id, c, v)"
           />
         </div>
         <RecordPanel
