@@ -428,6 +428,7 @@ function onFilterCol(col: string, op = '=') {
             @check-page="(all: boolean) => store.checkPage(tab.id, all)"
             @copy-row="(r: number) => store.copyRowToNew(tab.id, r)"
             @filter-value="(c: string, v: string) => onFilterValue(c, v)"
+            @batch-committed="() => store.saveChanges(tab.id)"
           />
         </div>
         <RecordPanel

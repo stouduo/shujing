@@ -615,6 +615,7 @@ async function applyHistory(key: string | number) {
                     if (eqDeleted[r]) delete eqDeleted[r]
                     else eqDeleted[r] = true
                   }"
+                  @batch-committed="() => eqSave()"
                 />
               </div>
               <RecordPanel

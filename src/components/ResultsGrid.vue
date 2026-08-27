@@ -55,6 +55,7 @@ const emit = defineEmits<{
   (e: 'check-row', rowIndex: number, val: boolean): void
   (e: 'check-page', all: boolean): void
   (e: 'copy-row', rowIndex: number): void
+  (e: 'batch-committed', col: string, count: number): void
 }>()
 
 const message = useMessage()
@@ -230,10 +231,48 @@ const cellSel = ref<{ col: number; rows: Set<number> } | null>(null)
 const selEdit = ref<{ col: number; rows: number[]; anchor: number } | null>(null)
 const selDraft = ref('')
 let selAnchor = -1
+/** 拖拽选区进行中(pointerdown 后纵向划过其他行) */
+const selDragging = ref(false)
+let dragSel: { col: number; from: number } | null = null
 
 function inSel(r: number, c: number): boolean {
   const s = cellSel.value
   return !!s && s.col === c && s.rows.has(r)
+}
+
+function rangeSelectRows(a: number, b: number, col: number) {
+  const [x, y] = a <= b ? [a, b] : [b, a]
+  const rows = new Set<number>()
+  for (let i = x; i <= y; i++) rows.add(i)
+  cellSel.value = { col, rows }
+  selAnchor = a
+}
+
+function onCellPointerDown(e: PointerEvent, r: number, c: number) {
+  if (e.button !== 0) return
+  // 记录拖拽起点;未划出该格前视作普通点击(行选/修饰键逻辑不变)
+  dragSel = { col: c, from: r }
+}
+
+function onCellPointerEnter(e: PointerEvent, r: number, c: number) {
+  if (!dragSel) return
+  if (e.buttons === 0) {
+    // 按键已在格间释放
+    dragSel = null
+    selDragging.value = false
+    return
+  }
+  if (!cellSel.value && !selDragging.value) selDragging.value = true
+  if (c !== dragSel.col) {
+    rangeSelectRows(dragSel.from, r, dragSel.col)
+    return
+  }
+  rangeSelectRows(dragSel.from, r, c)
+}
+
+function endDragSel() {
+  dragSel = null
+  selDragging.value = false
 }
 
 function onCellClick(e: MouseEvent, r: number, c: number) {
@@ -244,7 +283,7 @@ function onCellClick(e: MouseEvent, r: number, c: number) {
   } else if (e.shiftKey) {
     e.stopPropagation()
     e.preventDefault()
-    rangeSel(r, c)
+    rangeSelectRows(selAnchor >= 0 ? selAnchor : r, r, c)
   } else if (cellSel.value && !inSel(r, c)) {
     // 普通点击选区外:清除选区,行选照常(不拦截冒泡)
     cellSel.value = null
@@ -261,19 +300,6 @@ function toggleSel(r: number, c: number) {
     cellSel.value = s.rows.size ? { col: c, rows: new Set(s.rows) } : null
   }
   selAnchor = r
-}
-
-function rangeSel(r: number, c: number) {
-  const s = cellSel.value
-  if (!s || s.col !== c) {
-    cellSel.value = { col: c, rows: new Set([r]) }
-    selAnchor = r
-    return
-  }
-  const [a, b] = selAnchor <= r ? [selAnchor, r] : [r, selAnchor]
-  const rows = new Set<number>()
-  for (let i = a; i <= b; i++) rows.add(i)
-  cellSel.value = { col: c, rows }
 }
 
 /** 进入批量编辑态(键盘字符/回车/双击选中单元格) */
@@ -299,6 +325,7 @@ function commitSelEdit() {
     if (v !== (displayValue(r, s.col) ?? null)) emit('cell-change', r, col, v)
   }
   cellSel.value = null
+  emit('batch-committed', col, s.rows.length)
 }
 
 function cancelSelEdit() {
@@ -575,10 +602,11 @@ defineExpose({
     <div
       ref="scroller"
       class="grid"
+      :class="{ 'sel-dragging': selDragging }"
       @scroll.passive="onScroll"
       @pointermove="onResizeMove"
-      @pointerup="endResize"
-      @pointercancel="endResize"
+      @pointerup="() => { endDragSel(); endResize() }"
+      @pointercancel="() => { endDragSel(); endResize() }"
     >
       <div class="inner" :style="{ width: totalW + 'px' }">
         <div class="head">
@@ -713,6 +741,8 @@ defineExpose({
               ? `原值:${props.rows[start + ri]?.[ci] ?? 'NULL'}`
               : displayValue(start + ri, ci) ?? 'NULL'"
             @click="onCellClick($event, start + ri, ci)"
+            @pointerdown="onCellPointerDown($event, start + ri, ci)"
+            @pointerenter="onCellPointerEnter($event, start + ri, ci)"
             @dblclick="onCellDblClick(start + ri, ci)"
             @contextmenu="openCtx($event, start + ri, ci)"
           >
@@ -747,7 +777,7 @@ defineExpose({
     <div v-if="truncated" class="trunc">已达显示上限,仅展示前 {{ rows.length }} 行</div>
     <div v-if="cellSel && !selEdit" class="sel-badge">
       已选 <b>{{ cellSel.rows.size }}</b> 行 · {{ columns[cellSel.col] }} ·
-      <template v-if="editable">输入字符或 ↵ 批量填充,Esc 取消</template>
+      <template v-if="editable">输入字符或 ↵ 批量修改并保存,Esc 取消</template>
       <template v-else>Esc 取消</template>
     </div>
     <datalist v-if="fkOpts" id="fk-opts-dl">
@@ -1108,6 +1138,10 @@ defineExpose({
 .cell.sel {
   background: rgba(10, 132, 255, 0.14);
   box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.4);
+}
+.grid.sel-dragging {
+  user-select: none;
+  cursor: cell;
 }
 .cell-input.sel-input {
   border-color: var(--accent);
