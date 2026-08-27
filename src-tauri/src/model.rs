@@ -118,6 +118,8 @@ pub enum Backend {
 pub struct LiveConn {
     pub info: ConnInfo,
     pub backend: Backend,
+    /// 会话当前库(USE / SET search_path),断线重连后自动恢复
+    pub last_db: Option<String>,
 }
 
 #[derive(Default)]

@@ -238,7 +238,7 @@ function onFilterCol(col: string, op = '=') {
         <Icon name="table" :size="13" class="table-ic" /> {{ tab.table }}
       </span>
       <div class="seg-group">
-        <n-button size="small" quaternary :loading="tab.loading" title="刷新 (F5)" @click="refresh">
+        <n-button size="small" quaternary title="刷新 (F5)" @click="refresh">
           <Icon name="refresh" :size="13" />
         </n-button>
         <n-button size="small" quaternary title="查看表结构" @click="openStructure">

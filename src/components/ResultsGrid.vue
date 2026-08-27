@@ -153,7 +153,7 @@ const searchMatches = computed(() => {
 })
 
 // ── 虚拟滚动 ────────────────────────────────────────
-const vscroll = useVirtualScroll({ rowCount: computed(() => props.rows.length), rowHeight: 28 })
+const vscroll = useVirtualScroll({ rowCount: computed(() => props.rows.length), rowHeight: ROW_H })
 const { scroller, start, end } = vscroll
 const visible = computed(() => props.rows.slice(start.value, end.value))
 function onScroll() {
@@ -902,7 +902,6 @@ defineExpose({
 }
 .row {
   display: flex;
-  transition: background-color 0.06s ease;
 }
 .row:hover {
   background: var(--row-hover);
@@ -931,7 +930,6 @@ defineExpose({
   outline-offset: -2px;
   z-index: 4;
   background: rgba(10, 132, 255, 0.06);
-  transition: background-color 0.1s ease;
 }
 .row.search-hit {
   background: rgba(255, 213, 74, 0.06) !important;
@@ -1118,7 +1116,6 @@ defineExpose({
   outline: none;
   animation: fade-in 0.08s ease;
   box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.15);
-  transition: box-shadow 0.15s ease;
 }
 .null {
   color: var(--null-color);
@@ -1176,7 +1173,6 @@ defineExpose({
   border: 1px solid var(--accent);
   color: var(--text-secondary);
   font-size: 11px;
-  backdrop-filter: blur(8px);
   pointer-events: none;
 }
 .sel-badge b {

@@ -6,7 +6,6 @@ import {
   NInput,
   NModal,
   NPopconfirm,
-  NSpin,
   useMessage,
   type DropdownOption,
 } from 'naive-ui'
@@ -149,10 +148,28 @@ function currentDbTables(connId: string): import('../types').TableMeta[] {
   return dbTables.value[key] ?? []
 }
 
-/** 当前展开库的表(按 kind 过滤) */
+/** 当前展开库的表(按 kind 过滤),并应用顶栏表名搜索 */
 function dbTablesOf(connId: string, kind: string): import('../types').TableMeta[] {
-  return currentDbTables(connId).filter((t) => t.kind === kind)
+  const kw = store.tableFilter.trim().toLowerCase()
+  const list = currentDbTables(connId).filter((t) => t.kind === kind)
+  if (!kw) return list
+  return list.filter((t) => t.name.toLowerCase().includes(kw))
 }
+
+// 搜索时自动展开有命中的库(仅限已缓存表列表的库,不触发网络)
+watch(
+  () => store.tableFilter,
+  (kw) => {
+    const q = kw.trim().toLowerCase()
+    if (!q) return
+    for (const [key, tables] of Object.entries(dbTables.value)) {
+      if (!tables.some((t) => t.name.toLowerCase().includes(q))) continue
+      const connId = key.slice(0, key.indexOf('/'))
+      const db = key.slice(key.indexOf('/') + 1)
+      if (databases.value[connId]?.includes(db)) expandedDb.value[connId] = db
+    }
+  },
+)
 
 /** 点击连接行:展开/收起内容(不触发断开) */
 // 纯展开/收起(不重新加载任何数据)
@@ -654,7 +671,6 @@ async function onConnMenuSelect(key: string | number) {
           </span>
         </div>
         <div v-if="connExpanded[c.id] && store.live[c.id]" class="tables">
-          <n-spin v-if="store.live[c.id].loading" size="small" class="spin" />
           <!-- Redis:键空间分组 -->
           <template v-if="isRedisConn(c)">
             <div v-for="d in redisDbsOf(c.id)" :key="d.db" class="tbl redis-db" :title="`db${d.db}:${d.keys} 个键`" @click="store.openRedis(c.id, d.db)">
@@ -665,8 +681,6 @@ async function onConnMenuSelect(key: string | number) {
           <template v-else>
             <!-- 多数据库:MySQL/PG 显示库列表(树形展开) -->
             <template v-if="isMultiDb(c)">
-              <n-spin v-if="!databases[c.id]" size="small" class="spin" />
-              <template v-else>
                 <div
                   v-for="db in databases[c.id]"
                   :key="db"
@@ -683,7 +697,6 @@ async function onConnMenuSelect(key: string | number) {
                     </span>
                     <Icon name="database" :size="11" class="db-ic" />
                     <span class="db-name">{{ db }}</span>
-                    <n-spin v-if="dbLoading[`${c.id}/${db}`]" size="small" style="margin-left:auto" />
                   </div>
                   <!-- 展开的库:显示表/视图/程序对象 -->
                   <template v-if="expandedDb[c.id] === db">
@@ -704,7 +717,9 @@ async function onConnMenuSelect(key: string | number) {
                       >
                         <span class="tbl-icon"><Icon name="table" :size="12" /></span>{{ t.name }}
                       </div>
-                      <div v-if="!dbTablesOf(c.id, 'table').length && !dbLoading[`${c.id}/${db}`]" class="tbl-empty">无表</div>
+                      <div v-if="!dbTablesOf(c.id, 'table').length" class="tbl-empty">
+                        {{ store.tableFilter ? '无匹配表' : '无表' }}
+                      </div>
                     </div>
                     <div v-if="dbTablesOf(c.id, 'view').length" class="group db-child" @click="toggleGroup(c.id, 'view')" @contextmenu.prevent="openGroupMenu($event, c.id, db)">
                       <span class="chevron">
@@ -751,7 +766,6 @@ async function onConnMenuSelect(key: string | number) {
                   </template>
                 </div>
                 <!-- 刷新按钮 -->
-                </template>
             </template>
             <!-- 单库(SQLite):直接显示表,多库时不渲染 -->
             <template v-else>
@@ -1065,6 +1079,7 @@ async function onConnMenuSelect(key: string | number) {
 .scroll {
   flex: 1;
   overflow-y: auto;
+  overflow-x: auto;
   padding: 2px 10px 10px;
 }
 .conn {
@@ -1083,7 +1098,7 @@ async function onConnMenuSelect(key: string | number) {
   color: var(--text-secondary);
   font-size: 12.5px;
   font-weight: 600;
-  transition: all 0.12s ease;
+  min-width: max-content;
   border-left: 2px solid transparent;
 }
 .db-row:hover {
@@ -1104,10 +1119,7 @@ async function onConnMenuSelect(key: string | number) {
   opacity: 0.8;
 }
 .db-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 .db-child {
@@ -1145,7 +1157,6 @@ async function onConnMenuSelect(key: string | number) {
   cursor: pointer;
   color: var(--text-secondary);
   user-select: none;
-  transition: background-color 0.12s ease, color 0.12s ease;
 }
 .row:hover {
   background: var(--bg-hover);
@@ -1172,10 +1183,7 @@ async function onConnMenuSelect(key: string | number) {
   }
 }
 .name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
   white-space: nowrap;
   font-size: 13px;
 }
@@ -1235,10 +1243,6 @@ async function onConnMenuSelect(key: string | number) {
 .tables {
   padding: 1px 0 4px;
 }
-.spin {
-  display: block;
-  padding: 8px 0 8px 20px;
-}
 .group {
   display: flex;
   align-items: center;
@@ -1253,7 +1257,6 @@ async function onConnMenuSelect(key: string | number) {
   letter-spacing: 0.3px;
   cursor: pointer;
   user-select: none;
-  transition: color 0.12s ease, background-color 0.12s ease;
 }
 .group:hover {
   color: var(--text-secondary);
@@ -1278,12 +1281,10 @@ async function onConnMenuSelect(key: string | number) {
   border-radius: 6px;
   color: var(--text-secondary);
   cursor: pointer;
-  overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
+  min-width: max-content;
   font-size: 12.5px;
   user-select: none;
-  transition: background-color 0.12s ease, color 0.12s ease;
 }
 .tbl:hover {
   color: var(--text);
@@ -1368,7 +1369,6 @@ async function onConnMenuSelect(key: string | number) {
   font-size: 12.5px;
   background: none;
   cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
 }
 .none:hover {
   border-color: var(--accent);

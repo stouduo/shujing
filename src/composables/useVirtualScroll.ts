@@ -6,13 +6,17 @@ import { computed, onMounted, onUnmounted, ref, type Ref } from 'vue'
 
 interface Options {
   rowCount: Ref<number>
-  rowHeight: number
+  /** 行高:固定数值或响应式(紧凑/舒适切换) */
+  rowHeight: number | Ref<number>
   overscanBefore?: number
   overscanAfter?: number
 }
 
 export function useVirtualScroll(opts: Options) {
-  const { rowCount, rowHeight, overscanBefore = 4, overscanAfter = 8 } = opts
+  const { rowCount, overscanBefore = 4, overscanAfter = 8 } = opts
+  const rowH = computed(() =>
+    typeof opts.rowHeight === 'number' ? opts.rowHeight : opts.rowHeight.value,
+  )
 
   const scroller = ref<HTMLElement | null>(null)
   const scrollTop = ref(0)
@@ -38,11 +42,11 @@ export function useVirtualScroll(opts: Options) {
   })
 
   const start = computed(() =>
-    Math.max(0, Math.floor(scrollTop.value / rowHeight) - overscanBefore),
+    Math.max(0, Math.floor(scrollTop.value / rowH.value) - overscanBefore),
   )
 
   const end = computed(() =>
-    Math.min(rowCount.value, start.value + Math.ceil(viewH.value / rowHeight) + overscanAfter),
+    Math.min(rowCount.value, start.value + Math.ceil(viewH.value / rowH.value) + overscanAfter),
   )
 
   /** 可见窗口的行(slice 引用,保持原数组行号) */
@@ -52,8 +56,8 @@ export function useVirtualScroll(opts: Options) {
     return { start: start.value, end: end.value }
   })
 
-  const topPad = computed(() => start.value * rowHeight)
-  const bottomPad = computed(() => Math.max(0, (rowCount.value - end.value) * rowHeight))
+  const topPad = computed(() => start.value * rowH.value)
+  const bottomPad = computed(() => Math.max(0, (rowCount.value - end.value) * rowH.value))
 
   return { scroller, scrollTop, viewH, start, end, visible, topPad, bottomPad, onScroll, measure }
 }

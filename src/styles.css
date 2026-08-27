@@ -150,6 +150,22 @@ body {
   overflow: hidden;
 }
 
+/* 侧栏与主区之间的可拖动分隔条 */
+.splitter {
+  flex-shrink: 0;
+  width: 5px;
+  margin: 0 -2px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
+  transition: background-color 0.15s ease;
+}
+.splitter:hover,
+.splitter:active {
+  background: var(--accent);
+  opacity: 0.4;
+}
+
 /* 仅真实 Tauri 窗口需要为 overlay 标题栏的红绿灯留白 */
 html.in-tauri .sidebar .brand {
   margin-top: 40px;

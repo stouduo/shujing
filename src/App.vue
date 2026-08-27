@@ -35,6 +35,32 @@ function togglePin(id: string) {
 }
 const showGlobalSearch = ref(false)
 
+// ── 侧栏宽度:分隔条可拖动,记忆到 localStorage ────────
+const sidebarW = ref(clampSidebarW(Number(localStorage.getItem('dblens_sidebar_w')) || 250))
+let splitDrag: { x: number; w: number } | null = null
+
+function clampSidebarW(w: number): number {
+  return Math.min(520, Math.max(180, w))
+}
+function startSplit(e: PointerEvent) {
+  splitDrag = { x: e.clientX, w: sidebarW.value }
+  ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+  e.preventDefault()
+}
+function onSplitMove(e: PointerEvent) {
+  if (!splitDrag) return
+  sidebarW.value = clampSidebarW(splitDrag.w + e.clientX - splitDrag.x)
+}
+function endSplit() {
+  if (!splitDrag) return
+  splitDrag = null
+  try {
+    localStorage.setItem('dblens_sidebar_w', String(sidebarW.value))
+  } catch {
+    /* 忽略 */
+  }
+}
+
 // ── 主题 ──────────────────────────────────────────────
 // 主题:手动选择 > 系统跟随
 const getInitialTheme = (): 'dark' | 'light' => {
@@ -297,11 +323,20 @@ function openEdit(info: ConnInfo) {
       <n-dialog-provider>
         <div class="app-shell">
           <SideBar
+            :style="{ width: sidebarW + 'px' }"
             @new-connection="openCreate"
             @edit-connection="openEdit"
             @import-csv="openImport"
             @quick-open="showQuickOpen = true"
             @global-search="showGlobalSearch = true"
+          />
+          <div
+            class="splitter"
+            title="拖动调整侧栏宽度"
+            @pointerdown="startSplit"
+            @pointermove="onSplitMove"
+            @pointerup="endSplit"
+            @pointercancel="endSplit"
           />
           <div class="app-main">
             <div class="tabbar" data-tauri-drag-region>
