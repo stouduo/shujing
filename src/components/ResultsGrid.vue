@@ -240,6 +240,12 @@ function inSel(r: number, c: number): boolean {
   return !!s && s.col === c && s.rows.has(r)
 }
 
+/** 批量编辑中:该格是否正在实时预览输入值 */
+function selPreviewing(r: number, c: number): boolean {
+  const s = selEdit.value
+  return !!s && s.col === c && s.rows.includes(r)
+}
+
 function rangeSelectRows(a: number, b: number, col: number) {
   const [x, y] = a <= b ? [a, b] : [b, a]
   const rows = new Set<number>()
@@ -732,6 +738,7 @@ defineExpose({
               pinned: pinned.includes(columns[ci]),
               'nav-focus': navCell?.r === start + ri && navCell?.c === ci,
               sel: inSel(start + ri, ci),
+              'sel-preview': selPreviewing(start + ri, ci),
             }"
             :style="{
               width: widths[ci] + 'px',
@@ -768,8 +775,11 @@ defineExpose({
               @keydown.esc.stop="cancelSelEdit"
               @blur="commitSelEdit"
             />
-            <span v-else-if="displayValue(start + ri, ci) === null" class="null">NULL</span>
-            <template v-else>{{ displayCell(start + ri, ci) }}</template>
+            <span
+              v-else-if="displayValue(start + ri, ci) === null && !selPreviewing(start + ri, ci)"
+              class="null"
+            >NULL</span>
+            <template v-else>{{ selPreviewing(start + ri, ci) ? selDraft : displayCell(start + ri, ci) }}</template>
           </div>
         </div>
         <div :style="{ height: Math.max(0, (rows.length - end) * ROW_H) + 'px' }" />
@@ -1138,6 +1148,11 @@ defineExpose({
 .cell.sel {
   background: rgba(10, 132, 255, 0.14);
   box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.4);
+}
+.cell.sel-preview {
+  background: rgba(255, 159, 10, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(255, 159, 10, 0.4);
+  color: var(--text);
 }
 .grid.sel-dragging {
   user-select: none;
