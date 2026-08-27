@@ -303,6 +303,28 @@ function openDbMenu(e: MouseEvent, connId: string, db: string) {
   dbMenu.value = { show: true, x: e.clientX, y: e.clientY, connId, db }
 }
 
+// ── 分组行右键(表/视图:局部刷新列表) ────────────────
+const groupMenu = ref({ show: false, x: 0, y: 0, connId: '', db: '' })
+
+function openGroupMenu(e: MouseEvent, connId: string, db: string) {
+  groupMenu.value = { show: true, x: e.clientX, y: e.clientY, connId, db }
+}
+
+async function onGroupMenuSelect(key: string | number) {
+  groupMenu.value.show = false
+  if (key !== 'refresh') return
+  const g = groupMenu.value
+  if (g.db) {
+    await refreshTablesOnly(g.connId, g.db)
+  } else if (store.live[g.connId]) {
+    try {
+      store.live[g.connId].tables = await api.listTables(g.connId)
+    } catch (e) {
+      console.warn('刷新表列表失败:', e)
+    }
+  }
+}
+
 async function refreshTablesOnly(connId: string, db: string) {
   const key = `${connId}/${db}`
   dbLoading.value[key] = true
@@ -665,7 +687,7 @@ async function onConnMenuSelect(key: string | number) {
                   </div>
                   <!-- 展开的库:显示表/视图/程序对象 -->
                   <template v-if="expandedDb[c.id] === db">
-                    <div class="group db-child" @click="toggleGroup(c.id, 'table')">
+                    <div class="group db-child" @click="toggleGroup(c.id, 'table')" @contextmenu.prevent="openGroupMenu($event, c.id, db)">
                       <span class="chevron">
                         <Icon :name="isCollapsed(c.id, 'table') ? 'chevronRight' : 'chevronDown'" :size="11" />
                       </span>
@@ -684,7 +706,7 @@ async function onConnMenuSelect(key: string | number) {
                       </div>
                       <div v-if="!dbTablesOf(c.id, 'table').length && !dbLoading[`${c.id}/${db}`]" class="tbl-empty">无表</div>
                     </div>
-                    <div v-if="dbTablesOf(c.id, 'view').length" class="group db-child" @click="toggleGroup(c.id, 'view')">
+                    <div v-if="dbTablesOf(c.id, 'view').length" class="group db-child" @click="toggleGroup(c.id, 'view')" @contextmenu.prevent="openGroupMenu($event, c.id, db)">
                       <span class="chevron">
                         <Icon :name="isCollapsed(c.id, 'view') ? 'chevronRight' : 'chevronDown'" :size="11" />
                       </span>
@@ -736,6 +758,7 @@ async function onConnMenuSelect(key: string | number) {
             <div
               class="group"
               @click="toggleGroup(c.id, 'table')"
+              @contextmenu.prevent="openGroupMenu($event, c.id, '')"
             >
               <span class="chevron">
                 <Icon :name="isCollapsed(c.id, 'table') ? 'chevronRight' : 'chevronDown'" :size="11" />
@@ -758,6 +781,7 @@ async function onConnMenuSelect(key: string | number) {
               v-if="tablesOf(c.id, 'view').length"
               class="group"
               @click="toggleGroup(c.id, 'view')"
+              @contextmenu.prevent="openGroupMenu($event, c.id, '')"
             >
               <span class="chevron">
                 <Icon :name="isCollapsed(c.id, 'view') ? 'chevronRight' : 'chevronDown'" :size="11" />
@@ -827,6 +851,16 @@ async function onConnMenuSelect(key: string | number) {
       placement="bottom-start"
       @select="onMenuSelect"
       @clickoutside="menuShow = false"
+    />
+    <n-dropdown
+      trigger="manual"
+      :show="groupMenu.show"
+      :x="groupMenu.x"
+      :y="groupMenu.y"
+      :options="[{ label: '刷新表列表', key: 'refresh' }]"
+      placement="bottom-start"
+      @select="onGroupMenuSelect"
+      @clickoutside="groupMenu.show = false"
     />
     <n-dropdown
       trigger="manual"
