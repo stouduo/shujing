@@ -20,7 +20,6 @@ interface HeadMenuActions {
   togglePin: (col: string) => void
   filterCol: (col: string, op?: string) => void
   showStats: (col: string) => void
-  batchSet: (col: string) => void
 }
 
 interface Options {
@@ -29,8 +28,6 @@ interface Options {
   sortKey: () => string | null | undefined
   sortDir: () => 'asc' | 'desc'
   hasTableName: () => boolean
-  /** 是否支持勾选行(表数据页 true;查询结果无复选框为 false) */
-  hasCheckboxes: () => boolean
   cellActions: CellMenuActions
   headActions: HeadMenuActions
 }
@@ -97,9 +94,6 @@ export function useContextMenus(opts: Options) {
     o.push(
       { label: '列统计(当前页)', key: 'stats' },
     )
-    if (opts.editable() && opts.hasCheckboxes()) {
-      o.push({ label: '勾选行统一设置此列…', key: 'batch' })
-    }
     return o
   })
 
@@ -172,9 +166,6 @@ export function useContextMenus(opts: Options) {
         break
       case 'stats':
         opts.headActions.showStats(col)
-        break
-      case 'batch':
-        opts.headActions.batchSet(col)
         break
     }
   }

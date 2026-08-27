@@ -55,7 +55,6 @@ const emit = defineEmits<{
   (e: 'check-row', rowIndex: number, val: boolean): void
   (e: 'check-page', all: boolean): void
   (e: 'copy-row', rowIndex: number): void
-  (e: 'batch-set', col: string, value: string | null): void
 }>()
 
 const message = useMessage()
@@ -77,6 +76,29 @@ function openSearch() {
 const navCell = ref<{ r: number; c: number } | null>(null)
 
 function onGridKeydown(e: KeyboardEvent) {
+  // 批量编辑输入框自行处理按键
+  if (selEdit.value) return
+  // 有选区:回车/直接输入进入批量编辑,Esc 取消,方向键取消选区走常规导航
+  const s = cellSel.value
+  if (s) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      openSelEdit()
+      return
+    }
+    if (e.key === 'Escape') {
+      cellSel.value = null
+      return
+    }
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (props.editable) {
+        e.preventDefault()
+        openSelEdit(e.key)
+      }
+      return
+    }
+    cellSel.value = null
+  }
   if (!navCell.value) return
   const { r, c } = navCell.value
   const order = colOrder.value
@@ -201,29 +223,94 @@ function headTitle(col: string): string {
   return c ? `${col} — ${c}` : col
 }
 
-// ── 勾选行批量设置列值 ────────────────────────────────
-const batchCol = ref('')
-const batchVal = ref('')
-const batchNull = ref(false)
-const showBatch = ref(false)
+// ── 同列多行选区 + 批量编辑(Excel 式) ────────────────
+/** 选区:限定单列的行集合(绝对行号) */
+const cellSel = ref<{ col: number; rows: Set<number> } | null>(null)
+/** 批量编辑态:输入框锚定在首个选中行 */
+const selEdit = ref<{ col: number; rows: number[]; anchor: number } | null>(null)
+const selDraft = ref('')
+let selAnchor = -1
 
-function openBatch(col: string) {
-  const n = Object.keys(props.checkedRows ?? {}).length
-  if (!n) {
-    message.warning('请先勾选要批量修改的行(行首复选框)')
-    return
-  }
-  batchCol.value = col
-  batchVal.value = ''
-  batchNull.value = false
-  showBatch.value = true
+function inSel(r: number, c: number): boolean {
+  const s = cellSel.value
+  return !!s && s.col === c && s.rows.has(r)
 }
 
-function confirmBatch() {
-  const col = batchCol.value
-  showBatch.value = false
+function onCellClick(e: MouseEvent, r: number, c: number) {
+  if (e.metaKey || e.ctrlKey) {
+    e.stopPropagation()
+    e.preventDefault()
+    toggleSel(r, c)
+  } else if (e.shiftKey) {
+    e.stopPropagation()
+    e.preventDefault()
+    rangeSel(r, c)
+  } else if (cellSel.value && !inSel(r, c)) {
+    // 普通点击选区外:清除选区,行选照常(不拦截冒泡)
+    cellSel.value = null
+  }
+}
+
+function toggleSel(r: number, c: number) {
+  const s = cellSel.value
+  if (!s || s.col !== c) {
+    cellSel.value = { col: c, rows: new Set([r]) }
+  } else {
+    if (s.rows.has(r)) s.rows.delete(r)
+    else s.rows.add(r)
+    cellSel.value = s.rows.size ? { col: c, rows: new Set(s.rows) } : null
+  }
+  selAnchor = r
+}
+
+function rangeSel(r: number, c: number) {
+  const s = cellSel.value
+  if (!s || s.col !== c) {
+    cellSel.value = { col: c, rows: new Set([r]) }
+    selAnchor = r
+    return
+  }
+  const [a, b] = selAnchor <= r ? [selAnchor, r] : [r, selAnchor]
+  const rows = new Set<number>()
+  for (let i = a; i <= b; i++) rows.add(i)
+  cellSel.value = { col: c, rows }
+}
+
+/** 进入批量编辑态(键盘字符/回车/双击选中单元格) */
+function openSelEdit(init?: string) {
+  const s = cellSel.value
+  if (!s || !props.editable || s.rows.size < 2) return
+  const rows = [...s.rows].sort((a, b) => a - b).filter((r) => !rowDeleted(r))
+  if (!rows.length) return
+  selEdit.value = { col: s.col, rows, anchor: rows[0] }
+  const cur = displayValue(rows[0], s.col)
+  selDraft.value = init ?? (cur === null ? '' : cur)
+  fkOpts.value = null
+}
+
+function commitSelEdit() {
+  const s = selEdit.value
+  if (!s) return
+  selEdit.value = null
+  const col = props.columns[s.col]
   if (!col) return
-  emit('batch-set', col, batchNull.value ? null : batchVal.value)
+  const v = selDraft.value === '' ? null : selDraft.value
+  for (const r of s.rows) {
+    if (v !== (displayValue(r, s.col) ?? null)) emit('cell-change', r, col, v)
+  }
+  cellSel.value = null
+}
+
+function cancelSelEdit() {
+  selEdit.value = null
+}
+
+function onCellDblClick(r: number, c: number) {
+  if (inSel(r, c) && (cellSel.value?.rows.size ?? 0) > 1 && props.editable) {
+    openSelEdit()
+    return
+  }
+  startEdit(r, c)
 }
 
 // ── 单元格编辑 ────────────────────────────────────────
@@ -298,7 +385,6 @@ const menus = useContextMenus({
   sortKey: () => props.sortKey,
   sortDir: () => props.sortDir ?? 'asc',
   hasTableName: () => !!props.tableName,
-  hasCheckboxes: () => !!props.checkedRows,
   cellActions: {
     copyCell: async (r, c) => {
       try { await navigator.clipboard.writeText(displayValue(r, c) ?? '') } catch { /* 不可用 */ }
@@ -340,7 +426,6 @@ const menus = useContextMenus({
     togglePin: (col) => togglePin(col),
     filterCol: (col, op) => emit('filter-col', col, op),
     showStats: (col) => showColStats(col),
-    batchSet: (col) => openBatch(col),
   },
 })
 const { ctx, headCtx, ctxOptions, headCtxOptions, openCtx, openHeadCtx } = menus
@@ -388,6 +473,13 @@ function commitMlEdit() {
 
 watch([start], () => {
   if (editCell.value) commitEdit()
+  if (selEdit.value) commitSelEdit()
+})
+
+// 数据重查:选区与批量编辑失效
+watch(() => props.rows, () => {
+  cellSel.value = null
+  selEdit.value = null
 })
 
 // ── 列头右键菜单 ──────────────────────────────────────
@@ -611,6 +703,7 @@ defineExpose({
               editable: editable && !rowDeleted(start + ri),
               pinned: pinned.includes(columns[ci]),
               'nav-focus': navCell?.r === start + ri && navCell?.c === ci,
+              sel: inSel(start + ri, ci),
             }"
             :style="{
               width: widths[ci] + 'px',
@@ -619,7 +712,8 @@ defineExpose({
             :title="cellChanged(start + ri, ci)
               ? `原值:${props.rows[start + ri]?.[ci] ?? 'NULL'}`
               : displayValue(start + ri, ci) ?? 'NULL'"
-            @dblclick="startEdit(start + ri, ci)"
+            @click="onCellClick($event, start + ri, ci)"
+            @dblclick="onCellDblClick(start + ri, ci)"
             @contextmenu="openCtx($event, start + ri, ci)"
           >
             <input
@@ -634,6 +728,16 @@ defineExpose({
               @keydown.tab.prevent="moveEdit($event.shiftKey ? -1 : 1)"
               @blur="commitEdit"
             />
+            <input
+              v-else-if="selEdit && selEdit.anchor === start + ri && selEdit.col === ci"
+              v-model="selDraft"
+              class="cell-input mono sel-input"
+              :placeholder="`批量填充 ${selEdit.rows.length} 行,↵ 提交`"
+              :ref="focusEditEl"
+              @keydown.enter.prevent="commitSelEdit"
+              @keydown.esc.stop="cancelSelEdit"
+              @blur="commitSelEdit"
+            />
             <span v-else-if="displayValue(start + ri, ci) === null" class="null">NULL</span>
             <template v-else>{{ displayCell(start + ri, ci) }}</template>
           </div>
@@ -641,6 +745,11 @@ defineExpose({
         <div :style="{ height: Math.max(0, (rows.length - end) * ROW_H) + 'px' }" />
     </div>
     <div v-if="truncated" class="trunc">已达显示上限,仅展示前 {{ rows.length }} 行</div>
+    <div v-if="cellSel && !selEdit" class="sel-badge">
+      已选 <b>{{ cellSel.rows.size }}</b> 行 · {{ columns[cellSel.col] }} ·
+      <template v-if="editable">输入字符或 ↵ 批量填充,Esc 取消</template>
+      <template v-else>Esc 取消</template>
+    </div>
     <datalist v-if="fkOpts" id="fk-opts-dl">
       <option v-for="o in fkOpts.opts" :key="o" :value="o" />
     </datalist>
@@ -663,34 +772,6 @@ defineExpose({
         <div class="ml-footer">
           <n-button size="small" @click="mlEdit = null">取消</n-button>
           <n-button size="small" type="primary" @click="commitMlEdit">提交</n-button>
-        </div>
-      </template>
-    </n-modal>
-    <n-modal
-      :show="showBatch"
-      preset="card"
-      :title="`勾选行统一设置:${batchCol}`"
-      :style="{ width: '460px' }"
-      @update:show="(v: boolean) => (showBatch = v)"
-    >
-      <div class="batch-hint">
-        将把已勾选的 <b>{{ Object.keys(checkedRows ?? {}).length }}</b> 行的
-        <span class="mono">{{ batchCol }}</span> 列统一设置为下面的值(保存更改时生效)
-      </div>
-      <input
-        v-model="batchVal"
-        class="batch-input mono"
-        :disabled="batchNull"
-        placeholder="输入统一设置的值"
-        @keyup.enter="confirmBatch"
-      />
-      <label class="batch-null">
-        <input v-model="batchNull" type="checkbox" /> 设为 NULL
-      </label>
-      <template #footer>
-        <div class="ml-footer">
-          <n-button size="small" @click="showBatch = false">取消</n-button>
-          <n-button size="small" type="primary" @click="confirmBatch">应用到勾选行</n-button>
         </div>
       </template>
     </n-modal>
@@ -761,6 +842,7 @@ defineExpose({
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 .grid {
   flex: 1;
@@ -1023,35 +1105,32 @@ defineExpose({
   justify-content: flex-end;
   gap: 8px;
 }
-.batch-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 10px;
+.cell.sel {
+  background: rgba(10, 132, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.4);
 }
-.batch-hint b {
-  color: var(--accent);
-}
-.batch-input {
-  width: 100%;
-  height: 30px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--input-bg);
-  color: var(--text);
-  font-size: 13px;
-  padding: 0 8px;
-  outline: none;
-}
-.batch-input:focus {
+.cell-input.sel-input {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 159, 10, 0.25);
 }
-.batch-null {
+.sel-badge {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 6;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  font-size: 12px;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(28, 28, 33, 0.9);
+  border: 1px solid var(--accent);
   color: var(--text-secondary);
-  cursor: pointer;
+  font-size: 11px;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.sel-badge b {
+  color: var(--accent);
 }
 </style>

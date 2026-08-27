@@ -254,20 +254,6 @@ export const tableActions = {
     }
   },
 
-  /** 勾选行批量设置某列(统一值或 NULL),写入未保存变更,随保存一起提交 */
-  batchSetChecked(this: Store, id: string, col: string, value: string | null) {
-    const tab = this.tabs.find((t: Tab) => t.id === id)
-    if (!tab || tab.kind !== 'table') return 0
-    const checked = Object.keys(tab.checkedRows as Record<number, true>).map(Number)
-    let n = 0
-    for (const r of checked) {
-      if (!tab.changes[r]) tab.changes[r] = {}
-      tab.changes[r][col] = value
-      n++
-    }
-    return n
-  },
-
   discardChanges(this: Store, id: string) {
     const tab = this.tabs.find((t: Tab) => t.id === id)
     if (!tab || tab.kind !== 'table') return
