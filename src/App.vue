@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import {
   NConfigProvider,
   NDialogProvider,
+  NDropdown,
   NMessageProvider,
   darkTheme,
   type GlobalThemeOverrides,
@@ -103,6 +104,14 @@ function openTabCtx(e: MouseEvent, id: string) {
   tabCtx.value = { show: true, x: e.clientX, y: e.clientY, id }
 }
 
+// 标签右键:document 捕获阶段绑定,避免被子层拦截
+const tabsEl = ref<HTMLElement | null>(null)
+function onTabsContextmenu(e: MouseEvent) {
+  const el = (e.target as HTMLElement)?.closest?.('.tab[data-tab-id]')
+  if (!el) return
+  openTabCtx(e, (el as HTMLElement).dataset.tabId as string)
+}
+
 function closeOthers(id: string) {
   for (const t of [...store.tabs]) {
     if (t.id !== id) {
@@ -157,6 +166,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   tameInputs(document.body)
   tameObserver.observe(document.body, { childList: true, subtree: true })
+  document.addEventListener('contextmenu', onTabsContextmenu, true)
 })
 
 const showKeys = ref(false)
@@ -369,18 +379,23 @@ function openEdit(info: ConnInfo) {
           />
           <div class="app-main">
             <div class="tabbar" data-tauri-drag-region>
-              <div class="tabs" role="tablist">
+              <div
+                class="tabs"
+                role="tablist"
+                ref="tabsEl"
+                @contextmenu.capture="onTabsContextmenu"
+              >
                 <div
                   v-for="t in store.tabs"
                   :key="t.id"
                   class="tab"
+                  :data-tab-id="t.id"
                   :class="{ active: t.id === store.activeTabId }"
                   role="tab"
                   :aria-selected="t.id === store.activeTabId"
                   :title="t.title"
                   @click="store.activeTabId = t.id"
                   @mousedown.middle.prevent="store.closeTab(t.id)"
-                  @contextmenu.prevent="openTabCtx($event, t.id)"
                 >
                   <Icon :name="tabIconOf(t.kind)" :size="12" class="tab-icon" />
                   <input
