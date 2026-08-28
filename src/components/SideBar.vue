@@ -1154,7 +1154,7 @@ async function onConnMenuSelect(key: string | number) {
 
 <style scoped>
 .sidebar {
-  width: 210px;
+  width: 170px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

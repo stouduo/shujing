@@ -36,12 +36,14 @@ function togglePin(id: string) {
 }
 const showGlobalSearch = ref(false)
 
-// ── 侧栏宽度:分隔条可拖动,记忆到 localStorage ────────
-const sidebarW = ref(clampSidebarW(Number(localStorage.getItem('dblens_sidebar_w')) || 210))
+// ── 侧栏宽度:默认约为窗口宽度的 20%,分隔条可拖动,记忆到 localStorage ──
+const sidebarW = ref(
+  clampSidebarW(Number(localStorage.getItem('dblens_sidebar_w')) || Math.round(window.innerWidth * 0.2)),
+)
 let splitDrag: { x: number; w: number } | null = null
 
 function clampSidebarW(w: number): number {
-  return Math.min(520, Math.max(180, w))
+  return Math.min(520, Math.max(150, w))
 }
 function startSplit(e: PointerEvent) {
   splitDrag = { x: e.clientX, w: sidebarW.value }
