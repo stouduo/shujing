@@ -6,6 +6,7 @@ import {
   NInput,
   NModal,
   NPopconfirm,
+  NPopover,
   useMessage,
   type DropdownOption,
 } from 'naive-ui'
@@ -52,6 +53,57 @@ const expandedDb = ref<Record<string, string>>({})
 /** 各库的表缓存(键: connId/dbname) */
 const dbTables = ref<Record<string, import('../types').TableMeta[]>>({})
 const dbLoading = ref<Record<string, boolean>>({})
+
+// ── 库显示筛选(多库连接):勾选展示哪些库,按连接记忆 ──
+const DB_FILTER_KEY = 'dblens_dbfilter'
+/** 键为 connId;undefined=全部显示,数组=仅显示列出的库 */
+const dbFilter = ref<Record<string, string[]>>({})
+try {
+  dbFilter.value = JSON.parse(localStorage.getItem(DB_FILTER_KEY) ?? '{}')
+} catch {
+  dbFilter.value = {}
+}
+watch(
+  dbFilter,
+  (v) => {
+    try {
+      localStorage.setItem(DB_FILTER_KEY, JSON.stringify(v))
+    } catch {
+      /* 忽略 */
+    }
+  },
+  { deep: true },
+)
+
+function visibleDbs(connId: string): string[] {
+  const all = databases.value[connId] ?? []
+  const f = dbFilter.value[connId]
+  if (f === undefined) return all
+  return all.filter((d) => f.includes(d))
+}
+
+function dbVisible(connId: string, db: string): boolean {
+  const f = dbFilter.value[connId]
+  return f === undefined ? true : f.includes(db)
+}
+
+function toggleDbVisible(connId: string, db: string, on: boolean) {
+  const all = databases.value[connId] ?? []
+  const cur = new Set(dbFilter.value[connId] ?? all)
+  if (on) cur.add(db)
+  else cur.delete(db)
+  // 全选等价于无筛选
+  if (cur.size === all.length) delete dbFilter.value[connId]
+  else dbFilter.value[connId] = [...cur]
+}
+
+function setAllDbVisible(connId: string, on: boolean) {
+  if (on) {
+    delete dbFilter.value[connId]
+  } else {
+    dbFilter.value[connId] = []
+  }
+}
 
 function isMultiDb(c: ConnInfo): boolean {
   return c.dbType === 'mysql' || c.dbType === 'postgres'
@@ -701,8 +753,32 @@ async function onConnMenuSelect(key: string | number) {
           <template v-else>
             <!-- 多数据库:MySQL/PG 显示库列表(树形展开) -->
             <template v-if="isMultiDb(c)">
+              <div class="db-filter">
+                <n-popover trigger="click" placement="bottom-start" :show-arrow="false">
+                  <template #trigger>
+                    <button class="db-filter-btn" title="选择要展示的数据库">
+                      筛选库<template v-if="dbFilter[c.id] !== undefined"> ({{ visibleDbs(c.id).length }}/{{ (databases[c.id] ?? []).length }})</template>
+                      <Icon name="chevronDown" :size="10" />
+                    </button>
+                  </template>
+                  <div class="db-filter-pop">
+                    <label v-for="db in databases[c.id] ?? []" :key="db" class="db-filter-item">
+                      <input
+                        type="checkbox"
+                        :checked="dbVisible(c.id, db)"
+                        @change="toggleDbVisible(c.id, db, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <span class="mono">{{ db }}</span>
+                    </label>
+                    <div class="db-filter-ops">
+                      <button @click="setAllDbVisible(c.id, true)">全选</button>
+                      <button @click="setAllDbVisible(c.id, false)">全部隐藏</button>
+                    </div>
+                  </div>
+                </n-popover>
+              </div>
                 <div
-                  v-for="db in databases[c.id]"
+                  v-for="db in visibleDbs(c.id)"
                   :key="db"
                   class="db-node"
                 >
@@ -1113,6 +1189,63 @@ async function onConnMenuSelect(key: string | number) {
 }
 .db-node {
   margin-bottom: 0;
+}
+.db-filter {
+  padding: 2px 8px 2px 10px;
+}
+.db-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.db-filter-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.db-filter-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 2px;
+}
+.db-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.db-filter-ops {
+  display: flex;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+.db-filter-ops button {
+  flex: 1;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.db-filter-ops button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .db-row {
   display: flex;

@@ -152,18 +152,32 @@ body {
 
 /* 侧栏与主区之间的可拖动分隔条 */
 .splitter {
+  position: relative; /* 让 z-index 生效,否则被相邻面板盖住只剩 1px 可点 */
   flex-shrink: 0;
-  width: 5px;
-  margin: 0 -2px;
+  width: 6px;
+  margin: 0 -3px;
   cursor: col-resize;
   background: transparent;
-  z-index: 10;
+  z-index: 20;
   transition: background-color 0.15s ease;
 }
 .splitter:hover,
 .splitter:active {
   background: var(--accent);
   opacity: 0.4;
+}
+
+/* 侧栏宿主:宽度由分隔条拖动控制,内部 aside 撑满 */
+.sidebar-host {
+  flex-shrink: 0;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+.sidebar-host .sidebar {
+  flex: 1;
+  width: auto !important;
+  min-width: 0;
 }
 
 /* 仅真实 Tauri 窗口需要为 overlay 标题栏的红绿灯留白 */

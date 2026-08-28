@@ -114,7 +114,8 @@ function onTabsContextmenu(e: MouseEvent) {
 
 function closeOthers(id: string) {
   for (const t of [...store.tabs]) {
-    if (t.id !== id) {
+    // 固定的标签保持不动
+    if (t.id !== id && !pinnedTabs.value.has(t.id)) {
       const i = store.tabs.indexOf(t)
       if (i >= 0) store.tabs.splice(i, 1)
     }
@@ -124,9 +125,23 @@ function closeOthers(id: string) {
 
 function closeRight(id: string) {
   const idx = store.tabs.findIndex((t) => t.id === id)
-  const removed = store.tabs.slice(idx + 1)
-  store.tabs.splice(idx + 1)
-  if (removed.some((t) => t.id === store.activeTabId)) store.activeTabId = id
+  for (const t of store.tabs.slice(idx + 1)) {
+    if (pinnedTabs.value.has(t.id)) continue
+    const i = store.tabs.indexOf(t)
+    if (i >= 0) store.tabs.splice(i, 1)
+  }
+  if (!store.tabs.some((t) => t.id === store.activeTabId)) store.activeTabId = id
+}
+
+function closeLeft(id: string) {
+  const idx = store.tabs.findIndex((t) => t.id === id)
+  if (idx <= 0) return
+  for (const t of store.tabs.slice(0, idx)) {
+    if (pinnedTabs.value.has(t.id)) continue
+    const i = store.tabs.indexOf(t)
+    if (i >= 0) store.tabs.splice(i, 1)
+  }
+  if (!store.tabs.some((t) => t.id === store.activeTabId)) store.activeTabId = id
 }
 
 function openImport(connId: string) {
@@ -361,14 +376,16 @@ function openEdit(info: ConnInfo) {
       <MessageBridge />
       <n-dialog-provider>
         <div class="app-shell">
-          <SideBar
-            :style="{ width: sidebarW + 'px' }"
-            @new-connection="openCreate"
-            @edit-connection="openEdit"
-            @import-csv="openImport"
-            @quick-open="showQuickOpen = true"
-            @global-search="showGlobalSearch = true"
-          />
+          <!-- 多根组件不吃属性透传,宽度套在宿主容器上 -->
+          <div class="sidebar-host" :style="{ width: sidebarW + 'px' }">
+            <SideBar
+              @new-connection="openCreate"
+              @edit-connection="openEdit"
+              @import-csv="openImport"
+              @quick-open="showQuickOpen = true"
+              @global-search="showGlobalSearch = true"
+            />
+          </div>
           <div
             class="splitter"
             title="拖动调整侧栏宽度"
@@ -462,16 +479,18 @@ function openEdit(info: ConnInfo) {
           :y="tabCtx.y"
           :options="[
             { label: pinnedTabs.has(tabCtx.id) ? '关闭(已固定,先取消固定)' : '关闭', key: 'close', disabled: pinnedTabs.has(tabCtx.id) },
-            { label: '关闭其他', key: 'others' },
+            { label: '关闭左侧', key: 'left' },
             { label: '关闭右侧', key: 'right' },
+            { label: '关闭其他', key: 'others' },
           ]"
           placement="bottom-start"
           @select="(k: string | number) => {
             const id = tabCtx.id
             tabCtx.show = false
             if (k === 'close') store.closeTab(id)
-            else if (k === 'others') closeOthers(id)
+            else if (k === 'left') closeLeft(id)
             else if (k === 'right') closeRight(id)
+            else if (k === 'others') closeOthers(id)
           }"
           @clickoutside="tabCtx.show = false"
         />

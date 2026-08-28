@@ -164,6 +164,68 @@ const searchMatches = computed(() => {
   })
   return set
 })
+/** 命中行升序 + 当前定位游标 */
+const searchList = computed(() => [...searchMatches.value].sort((a, b) => a - b))
+const searchCursor = ref(0)
+
+function scrollToRow(r: number) {
+  const el = scroller.value
+  if (!el) return
+  const rowH = ROW_H.value
+  const top = r * rowH
+  if (top < el.scrollTop || top + rowH > el.scrollTop + el.clientHeight) {
+    el.scrollTop = Math.max(0, top - el.clientHeight / 2 + rowH / 2)
+  }
+}
+
+function stepSearch(dir: 1 | -1) {
+  const list = searchList.value
+  if (!list.length) return
+  searchCursor.value = (searchCursor.value + dir + list.length) % list.length
+  scrollToRow(list[searchCursor.value])
+}
+
+// 搜索词变化:回到第一个命中并滚动定位
+watch([searchApplied], () => {
+  searchCursor.value = 0
+  const first = searchList.value[0]
+  if (first !== undefined) scrollToRow(first)
+})
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] as string,
+  )
+}
+
+/** 该格是否命中搜索词(用于高亮渲染) */
+function cellHasHit(r: number, c: number): boolean {
+  const q = searchApplied.value.trim().toLowerCase()
+  if (!q) return false
+  const v = displayCell(r, c)
+  return v !== null && v.toLowerCase().includes(q)
+}
+
+/** 命中格的 HTML:关键词包 <mark>,其余转义 */
+function highlightCell(r: number, c: number): string {
+  const v = displayCell(r, c) ?? ''
+  const q = searchApplied.value.trim()
+  if (!q) return escapeHtml(v)
+  const lowerV = v.toLowerCase()
+  const lowerQ = q.toLowerCase()
+  let out = ''
+  let i = 0
+  for (;;) {
+    const idx = lowerV.indexOf(lowerQ, i)
+    if (idx < 0) {
+      out += escapeHtml(v.slice(i))
+      break
+    }
+    out += escapeHtml(v.slice(i, idx)) + '<mark class="kw">' + escapeHtml(v.slice(idx, idx + q.length)) + '</mark>'
+    i = idx + q.length
+  }
+  return out
+}
 
 // ── 虚拟滚动 ────────────────────────────────────────
 const vscroll = useVirtualScroll({ rowCount: computed(() => props.rows.length), rowHeight: ROW_H })
@@ -630,10 +692,11 @@ defineExpose({
         ref="searchInput"
         v-model="searchText"
         class="search-input mono"
-        placeholder="搜索结果…"
+        placeholder="搜索结果…(↵ 下一个,⇧↵ 上一个)"
+        @keydown.enter.prevent="stepSearch($event.shiftKey ? -1 : 1)"
         @keydown.esc="() => { searchText = ''; showSearch = false }"
       />
-      <span class="search-count">{{ searchMatches.size }} 行命中</span>
+      <span class="search-count">{{ searchList.length ? `${searchCursor + 1}/${searchList.length}` : 0 }} 行命中</span>
       <button class="search-close" @click="() => { searchText = ''; showSearch = false }">×</button>
     </div>
     <div
@@ -735,6 +798,7 @@ defineExpose({
             changed: rowChanged(start + ri) && !rowDeleted(start + ri),
             selected: props.selectedRow === start + ri,
             'search-hit': searchMatches.has(start + ri),
+            'search-current': searchList[searchCursor] === start + ri && searchApplied.trim() !== '',
           }"
           @click="emit('select-row', start + ri)"
         >
@@ -806,6 +870,11 @@ defineExpose({
               @keydown.enter.prevent="commitSelEdit"
               @keydown.esc.stop="cancelSelEdit"
               @blur="commitSelEdit"
+            />
+            <span
+              v-else-if="cellHasHit(start + ri, ci) && !selPreviewing(start + ri, ci)"
+              class="cell-hl"
+              v-html="highlightCell(start + ri, ci)"
             />
             <span
               v-else-if="displayValue(start + ri, ci) === null && !selPreviewing(start + ri, ci)"
@@ -967,6 +1036,16 @@ defineExpose({
 }
 .row.search-hit {
   background: rgba(255, 213, 74, 0.06) !important;
+}
+.row.search-current {
+  background: rgba(255, 213, 74, 0.16) !important;
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+.cell-hl mark.kw {
+  background: rgba(255, 213, 74, 0.45);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 .row.search-hit .cell {
   border-bottom-color: rgba(255, 213, 74, 0.15);
