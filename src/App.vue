@@ -125,9 +125,38 @@ function openImport(connId: string) {
   showImport.value = true
 }
 
+// ── 输入框关闭首字母自动大写/自动纠正/拼写检查(WebKit 默认行为对 DB 工具是干扰) ──
+function tameOne(el: Element) {
+  el.setAttribute('autocapitalize', 'none')
+  el.setAttribute('autocorrect', 'off')
+  el.setAttribute('spellcheck', 'false')
+}
+function tameInputs(scope: ParentNode) {
+  if (!(scope instanceof Element)) return
+  scope.querySelectorAll('input, textarea, [contenteditable="true"]').forEach(tameOne)
+}
+let tameScheduled = false
+const tameObserver = new MutationObserver((muts) => {
+  if (tameScheduled) return
+  tameScheduled = true
+  requestAnimationFrame(() => {
+    tameScheduled = false
+    for (const m of muts) {
+      m.addedNodes.forEach((n) => {
+        if (n instanceof HTMLElement) {
+          if (n.matches('input, textarea')) tameOne(n)
+          else tameInputs(n)
+        }
+      })
+    }
+  })
+})
+
 onMounted(() => {
   store.init()
   window.addEventListener('keydown', onKeydown)
+  tameInputs(document.body)
+  tameObserver.observe(document.body, { childList: true, subtree: true })
 })
 
 const showKeys = ref(false)
