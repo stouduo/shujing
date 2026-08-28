@@ -303,6 +303,7 @@ const menuOptions: DropdownOption[] = [
   { label: '删除表…', key: 'drop', props: { style: { color: '#ff6b70' } } },
   { type: 'divider', key: 'd2' },
   { label: '新建查询', key: 'query' },
+  { label: '关闭标签', key: 'close-tab' },
   { label: '刷新表列表', key: 'refresh' },
 ]
 
@@ -514,6 +515,19 @@ async function onMenuSelect(key: string | number) {
     case 'query':
       store.openQueryTab(t.connId)
       break
+    case 'close-tab': {
+      // 只关这张表自己的数据标签(同连接同库同名)
+      const tab = store.tabs.find(
+        (x) =>
+          x.kind === 'table' &&
+          x.connId === t.connId &&
+          x.table === t.table.name &&
+          (x.database ?? null) === (t.database ?? null),
+      )
+      if (tab) store.closeTab(tab.id)
+      else message.info('该表没有已打开的数据标签')
+      break
+    }
     case 'refresh': {
       // 局部刷新:刷该表所在库的表列表,不整连接 reload
       if (t.database) {

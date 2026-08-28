@@ -446,7 +446,7 @@ function openEdit(info: ConnInfo) {
           :x="tabCtx.x"
           :y="tabCtx.y"
           :options="[
-            { label: '关闭', key: 'close' },
+            { label: pinnedTabs.has(tabCtx.id) ? '关闭(已固定,先取消固定)' : '关闭', key: 'close', disabled: pinnedTabs.has(tabCtx.id) },
             { label: '关闭其他', key: 'others' },
             { label: '关闭右侧', key: 'right' },
           ]"
