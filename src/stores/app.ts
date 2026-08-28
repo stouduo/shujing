@@ -365,6 +365,19 @@ export const useAppStore = defineStore('app', {
     async openTable(connId: string, table: TableMeta, database?: string | null) {
       const conn = this.connById(connId)
       if (!conn) return
+      // 去重:同连接 + 同库 + 同名的表已打开,直接定位到已有标签
+      const dbKey = database ?? null
+      const existing = this.tabs.find(
+        (t) =>
+          t.kind === 'table' &&
+          t.connId === connId &&
+          t.table === table.name &&
+          (t.database ?? null) === dbKey,
+      )
+      if (existing) {
+        this.activeTabId = existing.id
+        return
+      }
       const id = this.nextId()
       this.pushTab({
         id,
