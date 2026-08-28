@@ -417,6 +417,14 @@ export const useAppStore = defineStore('app', {
 
 
     async openStructure(connId: string, table: string) {
+      // 去重:同连接同表的结构页已打开则定位
+      const existing = this.tabs.find(
+        (t) => t.kind === 'structure' && t.connId === connId && t.table === table,
+      )
+      if (existing) {
+        this.activeTabId = existing.id
+        return
+      }
       const id = this.nextId()
       this.pushTab({
         id,

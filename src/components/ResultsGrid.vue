@@ -79,6 +79,12 @@ const navCell = ref<{ r: number; c: number } | null>(null)
 function onGridKeydown(e: KeyboardEvent) {
   // 批量编辑输入框自行处理按键
   if (selEdit.value) return
+  // ⌘C:复制当前导航单元格内容(无导航格时走浏览器默认复制)
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && navCell.value) {
+    const v = displayValue(navCell.value.r, navCell.value.c)
+    navigator.clipboard.writeText(v ?? '').catch(() => {})
+    return
+  }
   // 有选区:回车/直接输入进入批量编辑,Esc 取消,方向键取消选区走常规导航
   const s = cellSel.value
   if (s) {
@@ -175,6 +181,7 @@ const fixedBase = computed(() =>
 
 // ── 列宽拖拽 ──────────────────────────────────────────
 const resizing = ref<{ col: number; startX: number; startW: number } | null>(null)
+let fitCtx: CanvasRenderingContext2D | null = null
 
 function startResize(e: PointerEvent, i: number) {
   e.stopPropagation()
@@ -191,6 +198,21 @@ function onResizeMove(e: PointerEvent) {
 
 function endResize() {
   resizing.value = null
+}
+
+/** 双击列边界:按可见行内容自适应列宽(文本测量,不碰 DOM) */
+function autoFitColumn(i: number) {
+  const col = props.columns[i]
+  if (!col) return
+  if (!fitCtx) fitCtx = document.createElement('canvas').getContext('2d')
+  if (!fitCtx) return
+  fitCtx.font = '12px ui-monospace, Menlo, Monaco, monospace'
+  let w = fitCtx.measureText(col).width + 34
+  for (let r = start.value; r < end.value; r++) {
+    const v = displayCell(r, i)
+    if (v !== null && v !== '') w = Math.max(w, fitCtx.measureText(v).width + 24)
+  }
+  setWidth(i, Math.min(600, Math.max(40, Math.ceil(w))))
 }
 
 // ── 列布局(宽度/固定/隐藏/持久化)抽自 useColumnLayout ──
@@ -653,8 +675,9 @@ defineExpose({
             <span v-if="sortIcon(columns[i])" class="sort-icon">{{ sortIcon(columns[i]) }}</span>
             <span
               class="col-resize"
-              title="拖拽调整列宽"
+              title="拖拽调整列宽 · 双击自适应"
               @pointerdown="(e: PointerEvent) => startResize(e, i)"
+              @dblclick.stop="autoFitColumn(i)"
             />
           </div>
         </div>

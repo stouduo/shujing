@@ -412,7 +412,10 @@ function openEdit(info: ConnInfo) {
               <div class="tabbar-spacer" data-tauri-drag-region />
             </div>
             <div v-if="activeTab" class="tab-content" :key="activeTab.id">
-              <EditorTab :key="activeTab.id" :tab="activeTab" />
+              <!-- KeepAlive:切换标签不销毁重建,滚动位置/编辑态保留(最多缓存 12 个) -->
+              <KeepAlive :max="12">
+                <EditorTab :key="activeTab.id" :tab="activeTab" />
+              </KeepAlive>
             </div>
             <div v-else class="welcome" data-tauri-drag-region>
               <div class="logo"><Icon name="database" :size="30" /></div>
