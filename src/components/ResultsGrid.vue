@@ -1080,14 +1080,10 @@ defineExpose({
   color: #fff;
 }
 .fixed-num {
-  position: sticky;
-  left: 0;
-  z-index: 1;
   background: var(--bg-fixed);
 }
 .head .fixed-num {
   background: var(--bg-head);
-  z-index: 3;
 }
 .cell.pinned {
   position: sticky;
@@ -1098,9 +1094,6 @@ defineExpose({
   z-index: 3;
 }
 .fixed-chk {
-  position: sticky;
-  left: 0;
-  z-index: 1;
   background: var(--bg-fixed);
   display: flex;
   align-items: center;
@@ -1108,7 +1101,6 @@ defineExpose({
 }
 .head .fixed-chk {
   background: var(--bg-head);
-  z-index: 3;
 }
 .cb {
   accent-color: var(--accent);

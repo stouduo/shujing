@@ -97,10 +97,10 @@ export function useColumnLayout(opts: UseColumnLayoutOptions) {
     return [...pinIdx, ...rest].filter((i) => visibleIdx.value.includes(i))
   })
 
-  /** 固定列的 sticky left 偏移(前置固定列之后依次累加) */
+  /** 固定列的 sticky left 偏移(☑/# 列已不固定,从 0 起依次累加) */
   const pinnedLeft = computed<Record<string, number>>(() => {
     const m: Record<string, number> = {}
-    let x = fixedBase.value
+    let x = 0
     for (const name of pinned.value) {
       const i = columns.value.indexOf(name)
       if (i >= 0) {
