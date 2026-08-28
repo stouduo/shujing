@@ -49,7 +49,7 @@ describe('useColumnLayout', () => {
     expect(l.colOrder.value).toEqual([2, 1, 3])
   })
 
-  it('固定列偏移从 fixedBase 起累加', () => {
+  it('固定列偏移从 0 起累加(☑/# 已不固定)', () => {
     const l = useColumnLayout({
       columns: ref(['id', 'name', 'age']),
       rows: ref([]),
@@ -57,8 +57,8 @@ describe('useColumnLayout', () => {
     })
     l.togglePin('id')
     l.togglePin('name')
-    expect(l.pinnedLeft.value['id']).toBe(110)
-    expect(l.pinnedLeft.value['name']).toBe(110 + l.widths.value[0])
+    expect(l.pinnedLeft.value['id']).toBe(0)
+    expect(l.pinnedLeft.value['name']).toBe(l.widths.value[0])
     // 非固定列无偏移
     expect(l.pinnedLeft.value['age']).toBeUndefined()
   })
