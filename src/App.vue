@@ -37,7 +37,7 @@ function togglePin(id: string) {
 const showGlobalSearch = ref(false)
 
 // ── 侧栏宽度:分隔条可拖动,记忆到 localStorage ────────
-const sidebarW = ref(clampSidebarW(Number(localStorage.getItem('dblens_sidebar_w')) || 250))
+const sidebarW = ref(clampSidebarW(Number(localStorage.getItem('dblens_sidebar_w')) || 210))
 let splitDrag: { x: number; w: number } | null = null
 
 function clampSidebarW(w: number): number {
@@ -211,8 +211,9 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     label: '全局',
     items: [
       ['⌘P', '快速查询'],
-      ['⌘⇧F', '全局搜索'],
+      ['⌘⇧F', '全局数据搜索'],
       ['⌘T / ⌘W', '新建 / 关闭标签'],
+      ['⌘1-9', '切换到第 N 个标签'],
       ['F5', '刷新 / 重跑'],
     ],
   },
@@ -227,11 +228,12 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     label: '表格',
     items: [
-      ['双击', '编辑'],
+      ['双击', '编辑单元格'],
       ['⌥↵', '多行编辑'],
       ['⇥ / ⇧⇥', '左 / 右移动'],
       ['↑↓←→', '导航'],
-      ['⌘F', '结果搜索'],
+      ['⌘C', '复制当前单元格'],
+      ['⌘F', '结果内搜索(↵ 定位)'],
       ['右键', '更多操作'],
     ],
   },
@@ -499,14 +501,17 @@ function openEdit(info: ConnInfo) {
             <div class="keys-popup">
               <div class="keys-popup-head">
                 <span class="keys-popup-title">快捷键</span>
+                <span class="keys-esc"><span class="kbd">Esc</span> 关闭</span>
                 <button class="keys-popup-close" @click="showKeys = false">×</button>
               </div>
-              <div class="keys-compact">
-                <div v-for="g in SHORTCUT_GROUPS" :key="g.label" class="keys-group-block">
+              <div class="keys-grid">
+                <div v-for="g in SHORTCUT_GROUPS" :key="g.label" class="keys-group">
                   <div class="keys-group-title">{{ g.label }}</div>
-                  <div v-for="item in g.items" :key="item[0]" class="keys-item">
-                    <span class="kbd">{{ item[0] }}</span>
+                  <div v-for="item in g.items" :key="item[1]" class="keys-item">
                     <span class="keys-desc">{{ item[1] }}</span>
+                    <span class="keys-keys">
+                      <span v-for="k in item[0].split(' / ')" :key="k" class="kbd">{{ k }}</span>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -585,29 +590,38 @@ function openEdit(info: ConnInfo) {
 .keys-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
 }
 .keys-popup {
-  width: 400px;
+  width: 640px;
   background: var(--bg-elevated, #222226);
-  border: 1px solid var(--border-strong, rgba(255,255,255,0.13));
-  border-radius: 14px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  padding: 16px 20px;
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.13));
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  padding: 18px 22px 20px;
 }
 .keys-popup-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 .keys-popup-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
+  margin-right: auto;
+}
+.keys-esc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
 }
 .keys-popup-close {
   border: none;
@@ -622,33 +636,67 @@ function openEdit(info: ConnInfo) {
   color: var(--text);
   background: var(--bg-hover);
 }
-.keys-compact {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.keys-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, auto);
+  column-gap: 32px;
+  row-gap: 20px;
 }
-.keys-group-block {
+.keys-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
 }
 .keys-group-title {
   font-size: 10.5px;
   font-weight: 700;
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 2px;
+  letter-spacing: 1.2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3px;
 }
 .keys-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 0;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.keys-item:hover {
+  background: var(--bg-hover);
 }
 .keys-desc {
   font-size: 12px;
   color: var(--text-secondary);
+}
+.keys-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.keys-popup .kbd,
+.keys-esc .kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 21px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
 }
 .tab-icon {
   opacity: 0.7;

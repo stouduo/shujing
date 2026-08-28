@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   NButton,
   NDropdown,
@@ -214,10 +214,10 @@ function dbTablesOf(connId: string, kind: string): import('../types').TableMeta[
   return list.length > TREE_CAP ? list.slice(0, TREE_CAP) : list
 }
 
-// 搜索时自动展开有命中的库(仅限已缓存表列表的库,不触发网络)
+// 搜索时自动展开有命中的库(仅限已缓存表列表的库,不触发网络),并滚动到第一个命中
 watch(
   () => store.tableFilter,
-  (kw) => {
+  async (kw) => {
     const q = kw.trim().toLowerCase()
     if (!q) return
     for (const [key, tables] of Object.entries(dbTables.value)) {
@@ -226,8 +226,35 @@ watch(
       const db = key.slice(key.indexOf('/') + 1)
       if (databases.value[connId]?.includes(db)) expandedDb.value[connId] = db
     }
+    await nextTick()
+    document.querySelector('.scroll .tbl mark')?.scrollIntoView({ block: 'nearest' })
   },
 )
+
+/** 表名搜索命中高亮 */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] as string,
+  )
+}
+function hiName(name: string): string {
+  const q = store.tableFilter.trim()
+  if (!q) return escapeHtml(name)
+  const lower = name.toLowerCase()
+  const lq = q.toLowerCase()
+  let out = ''
+  let i = 0
+  for (;;) {
+    const idx = lower.indexOf(lq, i)
+    if (idx < 0) {
+      out += escapeHtml(name.slice(i))
+      break
+    }
+    out += escapeHtml(name.slice(i, idx)) + '<mark class="kw">' + escapeHtml(name.slice(idx, idx + q.length)) + '</mark>'
+    i = idx + q.length
+  }
+  return out
+}
 
 /** 点击连接行:展开/收起内容(不触发断开) */
 // 纯展开/收起(不重新加载任何数据)
@@ -811,7 +838,7 @@ async function onConnMenuSelect(key: string | number) {
                         @click="store.openTable(c.id, t, db)"
                         @contextmenu.prevent="openMenu($event, c.id, t, db)"
                       >
-                        <span class="tbl-icon"><Icon name="table" :size="12" /></span>{{ t.name }}
+                        <span class="tbl-icon"><Icon name="table" :size="12" /></span><span class="tbl-name" v-html="hiName(t.name)"></span>
                       </div>
                       <div v-if="!dbTablesOf(c.id, 'table').length" class="tbl-empty">
                         {{ store.tableFilter ? '无匹配表' : '无表' }}
@@ -838,7 +865,7 @@ async function onConnMenuSelect(key: string | number) {
                         @click="store.openTable(c.id, t, db)"
                         @contextmenu.prevent="openMenu($event, c.id, t, db)"
                       >
-                        <span class="tbl-icon view"><Icon name="eye" :size="12" /></span>{{ t.name }}
+                        <span class="tbl-icon view"><Icon name="eye" :size="12" /></span><span class="tbl-name" v-html="hiName(t.name)"></span>
                       </div>
                     </div>
                     <!-- 程序对象(仅 MySQL/PG) -->
@@ -890,7 +917,7 @@ async function onConnMenuSelect(key: string | number) {
                 @click="store.openTable(c.id, t)"
                 @contextmenu.prevent="openMenu($event, c.id, t)"
               >
-                <span class="tbl-icon"><Icon name="table" :size="12" /></span>{{ t.name }}
+                <span class="tbl-icon"><Icon name="table" :size="12" /></span><span class="tbl-name" v-html="hiName(t.name)"></span>
               </div>
             </div>
             <div
@@ -913,7 +940,7 @@ async function onConnMenuSelect(key: string | number) {
                 @click="store.openTable(c.id, t)"
                 @contextmenu.prevent="openMenu($event, c.id, t)"
               >
-                <span class="tbl-icon view"><Icon name="eye" :size="12" /></span>{{ t.name }}
+                <span class="tbl-icon view"><Icon name="eye" :size="12" /></span><span class="tbl-name" v-html="hiName(t.name)"></span>
               </div>
             </div>
             <div
@@ -1127,7 +1154,7 @@ async function onConnMenuSelect(key: string | number) {
 
 <style scoped>
 .sidebar {
-  width: 250px;
+  width: 210px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1448,6 +1475,13 @@ async function onConnMenuSelect(key: string | number) {
 .tbl:hover {
   color: var(--text);
   background: var(--bg-hover);
+}
+.tbl-name mark.kw,
+.tbl-empty mark.kw {
+  background: rgba(255, 213, 74, 0.4);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 .tbl-icon {
   display: inline-flex;

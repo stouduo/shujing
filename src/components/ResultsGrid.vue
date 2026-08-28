@@ -62,7 +62,6 @@ const message = useMessage()
 
 const ROW_H = computed(() => (props.rowHeight === 'compact' ? 24 : 28))
 const W_NUM = 46
-const W_DEL = 34
 const W_CHK = 30
 
 const showSearch = ref(false)
@@ -237,9 +236,7 @@ function onScroll() {
 }
 
 const showNum = computed(() => props.editable && !hideRowNumLocal.value)
-const fixedBase = computed(() =>
-  (showNum.value ? W_NUM : 0) + (props.editable ? W_CHK + W_DEL : 0),
-)
+const fixedBase = computed(() => (props.editable ? W_CHK : 0) + (showNum.value ? W_NUM : 0))
 
 // ── 列宽拖拽 ──────────────────────────────────────────
 const resizing = ref<{ col: number; startX: number; startW: number } | null>(null)
@@ -542,6 +539,7 @@ const menus = useContextMenus({
     copyRowToNew: (r) => emit('copy-row', r),
     openMlEdit: (r, c) => openMlEdit(r, c),
     setNull: (r, col) => emit('cell-change', r, col, null),
+    deleteRow: (r) => emit('delete-row', r),
   },
   headActions: {
     copyColName: async (col) => {
@@ -710,8 +708,7 @@ defineExpose({
     >
       <div class="inner" :style="{ width: totalW + 'px' }">
         <div class="head">
-          <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px' }">#</div>
-          <div v-if="editable" class="cell head-cell fixed-chk" :style="{ width: W_CHK + 'px', left: (showNum ? W_NUM : 0) + 'px' }">
+          <div v-if="editable" class="cell head-cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }">
             <input
               type="checkbox"
               class="cb"
@@ -720,7 +717,7 @@ defineExpose({
               @change="emit('check-page', ($event.target as HTMLInputElement).checked)"
             />
           </div>
-          <div v-if="editable" class="cell head-cell fixed-del" :style="{ width: W_DEL + 'px', left: (showNum ? W_NUM + W_CHK : W_CHK) + 'px' }" />
+          <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: (editable ? W_CHK : 0) + 'px' }">#</div>
           <div
             v-for="i in colOrder"
             :key="i"
@@ -750,14 +747,15 @@ defineExpose({
           :key="'new-' + ni"
           class="row inserted"
         >
-          <div v-if="showNum" class="cell rownum fixed-num new-mark" :style="{ width: W_NUM + 'px' }">
-            +
-          </div>
-          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: (showNum ? W_NUM : 0) + 'px' }" />
-          <div v-if="editable" class="cell fixed-del" :style="{ width: W_DEL + 'px', left: (showNum ? W_NUM + W_CHK : W_CHK) + 'px' }">
-            <button class="del-btn active" title="移除该新行" @click="emit('remove-insert', ni)">
-              −
-            </button>
+          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }" />
+          <div
+            v-if="showNum"
+            class="cell rownum fixed-num new-remove"
+            title="移除该新行"
+            :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }"
+            @click="emit('remove-insert', ni)"
+          >
+            −
           </div>
           <div
             v-for="ci in colOrder"
@@ -802,10 +800,7 @@ defineExpose({
           }"
           @click="emit('select-row', start + ri)"
         >
-          <div v-if="showNum" class="cell rownum fixed-num" :style="{ width: W_NUM + 'px' }">
-            {{ start + ri + 1 }}
-          </div>
-          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: (showNum ? W_NUM : 0) + 'px' }">
+          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }">
             <input
               type="checkbox"
               class="cb"
@@ -813,15 +808,12 @@ defineExpose({
               @change="emit('check-row', start + ri, ($event.target as HTMLInputElement).checked)"
             />
           </div>
-          <div v-if="editable" class="cell fixed-del" :style="{ width: W_DEL + 'px', left: (showNum ? W_NUM + W_CHK : W_CHK) + 'px' }">
-            <button
-              class="del-btn"
-              :class="{ active: rowDeleted(start + ri) }"
-              :title="rowDeleted(start + ri) ? '取消删除' : '删除该行'"
-              @click="emit('delete-row', start + ri)"
-            >
-              −
-            </button>
+          <div
+            v-if="showNum"
+            class="cell rownum fixed-num"
+            :style="{ width: W_NUM + 'px', left: (editable ? W_CHK : 0) + 'px' }"
+          >
+            {{ start + ri + 1 }}
           </div>
           <div
             v-for="ci in colOrder"
@@ -1078,9 +1070,14 @@ defineExpose({
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
-.new-mark {
-  color: var(--green);
+.new-remove {
+  color: var(--danger);
   font-weight: 700;
+  cursor: pointer;
+}
+.new-remove:hover {
+  background: var(--danger);
+  color: #fff;
 }
 .fixed-num {
   position: sticky;
@@ -1088,8 +1085,7 @@ defineExpose({
   z-index: 1;
   background: var(--bg-fixed);
 }
-.head .fixed-num,
-.head .fixed-del {
+.head .fixed-num {
   background: var(--bg-head);
   z-index: 3;
 }
@@ -1103,54 +1099,20 @@ defineExpose({
 }
 .fixed-chk {
   position: sticky;
-  left: 46px;
+  left: 0;
   z-index: 1;
   background: var(--bg-fixed);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.fixed-del {
-  position: sticky;
-  left: 76px;
-  z-index: 1;
-  background: var(--bg-fixed);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.head .fixed-chk,
-.head .fixed-del {
+.head .fixed-chk {
   background: var(--bg-head);
   z-index: 3;
 }
 .cb {
   accent-color: var(--accent);
   cursor: pointer;
-}
-.del-btn {
-  width: 18px;
-  height: 18px;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-.del-btn:hover {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-.del-btn.active {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
 }
 .head-cell {
   position: relative;

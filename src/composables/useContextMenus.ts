@@ -13,6 +13,7 @@ interface CellMenuActions {
   copyRowToNew: (r: number) => void
   openMlEdit: (r: number, c: number) => void
   setNull: (r: number, col: string) => void
+  deleteRow: (r: number) => void
 }
 
 interface HeadMenuActions {
@@ -61,6 +62,7 @@ export function useContextMenus(opts: Options) {
       o.push({ label: '复制为新行', key: 'copyrow' })
       o.push({ label: '多行编辑… (⌥↵)', key: 'ml' })
       o.push({ label: '设为 NULL', key: 'null' })
+      o.push({ label: '删除该行', key: 'delrow', props: { style: { color: '#ff6b70' } } })
     }
     return o
   })
@@ -131,6 +133,9 @@ export function useContextMenus(opts: Options) {
         break
       case 'null':
         if (col) opts.cellActions.setNull(r, col)
+        break
+      case 'delrow':
+        opts.cellActions.deleteRow(r)
         break
     }
   }
