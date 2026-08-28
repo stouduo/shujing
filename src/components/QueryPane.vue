@@ -284,6 +284,13 @@ async function eqSave() {
 
 // ── 结果二次加工:内存筛选 + 排序(不重查数据库) ──────
 const memFilter = ref('')
+/** 防抖后的筛选词:大结果集逐键全量扫描会卡输入 */
+const memFilterApplied = ref('')
+let memFilterTimer: ReturnType<typeof setTimeout> | undefined
+watch(memFilter, (v) => {
+  clearTimeout(memFilterTimer)
+  memFilterTimer = setTimeout(() => (memFilterApplied.value = v), 200)
+})
 const memSort = ref<{ key: string | null; dir: OrderDir }>({ key: null, dir: 'asc' })
 const selectedRow = ref<number | null>(null)
 
@@ -291,6 +298,7 @@ watch(
   () => [props.tab.results, props.tab.activeSet] as const,
   () => {
     memFilter.value = ''
+    memFilterApplied.value = ''
     memSort.value = { key: null, dir: 'asc' }
     selectedRow.value = null
   },
@@ -300,7 +308,7 @@ const viewResult = computed<ExecResult | null>(() => {
   const r = activeResult.value
   if (!r) return null
   let rows = r.rows
-  const kw = memFilter.value.trim().toLowerCase()
+  const kw = memFilterApplied.value.trim().toLowerCase()
   if (kw) {
     rows = rows.filter((row) => row.some((c) => c !== null && c.toLowerCase().includes(kw)))
   }
@@ -339,7 +347,7 @@ function onMemSort(col: string, dir?: 'asc' | 'desc' | null) {
 }
 
 // 筛选/排序会重排行序,未保存修改的行号将错位 —— 有待保存修改时直接重置并提示
-watch([memFilter, () => memSort.value.key, () => memSort.value.dir], () => {
+watch([memFilterApplied, () => memSort.value.key, () => memSort.value.dir], () => {
   if (eqChangeCount.value > 0) {
     eqChanges.value = {}
     eqDeleted.value = {}

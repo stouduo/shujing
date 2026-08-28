@@ -142,8 +142,15 @@ function onGridKeydown(e: KeyboardEvent) {
 
 // ── 结果内搜索(⌘F) ──────────────────────────────────
 const searchText = ref('')
+/** 防抖后的搜索词:大结果集逐键全表扫描会卡输入 */
+const searchApplied = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(searchText, (v) => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => (searchApplied.value = v), 200)
+})
 const searchMatches = computed(() => {
-  const q = searchText.value.trim().toLowerCase()
+  const q = searchApplied.value.trim().toLowerCase()
   if (!q) return new Set<number>()
   const set = new Set<number>()
   props.rows.forEach((row, r) => {
@@ -509,10 +516,12 @@ watch([start], () => {
   if (selEdit.value) commitSelEdit()
 })
 
-// 数据重查:选区与批量编辑失效
+// 数据重查:选区与批量编辑失效,搜索态清空
 watch(() => props.rows, () => {
   cellSel.value = null
   selEdit.value = null
+  searchText.value = ''
+  searchApplied.value = ''
 })
 
 // ── 列头右键菜单 ──────────────────────────────────────
@@ -902,6 +911,8 @@ defineExpose({
 }
 .row {
   display: flex;
+  /* 行内布局变化不外溢,宽表滚动时减少全局重排 */
+  contain: layout paint style;
 }
 .row:hover {
   background: var(--row-hover);

@@ -148,12 +148,18 @@ function currentDbTables(connId: string): import('../types').TableMeta[] {
   return dbTables.value[key] ?? []
 }
 
-/** 当前展开库的表(按 kind 过滤),并应用顶栏表名搜索 */
+/** 当前展开库的表(按 kind 过滤),并应用顶栏表名搜索;无搜索时截断到 500 防止大库卡顿 */
+const TREE_CAP = 500
+
+function dbAllOf(connId: string, kind: string): import('../types').TableMeta[] {
+  return currentDbTables(connId).filter((t) => t.kind === kind)
+}
+
 function dbTablesOf(connId: string, kind: string): import('../types').TableMeta[] {
   const kw = store.tableFilter.trim().toLowerCase()
-  const list = currentDbTables(connId).filter((t) => t.kind === kind)
-  if (!kw) return list
-  return list.filter((t) => t.name.toLowerCase().includes(kw))
+  const list = dbAllOf(connId, kind)
+  if (kw) return list.filter((t) => t.name.toLowerCase().includes(kw))
+  return list.length > TREE_CAP ? list.slice(0, TREE_CAP) : list
 }
 
 // 搜索时自动展开有命中的库(仅限已缓存表列表的库,不触发网络)
@@ -704,7 +710,7 @@ async function onConnMenuSelect(key: string | number) {
                       <span class="chevron">
                         <Icon :name="isCollapsed(c.id, 'table') ? 'chevronRight' : 'chevronDown'" :size="11" />
                       </span>
-                      表 ({{ dbTablesOf(c.id, 'table').length }})
+                      表 ({{ dbAllOf(c.id, 'table').length }})
                     </div>
                     <div v-show="!isCollapsed(c.id, 'table')" class="group-items db-indent">
                       <div
@@ -720,12 +726,18 @@ async function onConnMenuSelect(key: string | number) {
                       <div v-if="!dbTablesOf(c.id, 'table').length" class="tbl-empty">
                         {{ store.tableFilter ? '无匹配表' : '无表' }}
                       </div>
+                      <div
+                        v-else-if="!store.tableFilter && dbAllOf(c.id, 'table').length > dbTablesOf(c.id, 'table').length"
+                        class="tbl-empty"
+                      >
+                        共 {{ dbAllOf(c.id, 'table').length }} 张,已显示前 {{ dbTablesOf(c.id, 'table').length }} 张 · 顶部搜索可过滤
+                      </div>
                     </div>
                     <div v-if="dbTablesOf(c.id, 'view').length" class="group db-child" @click="toggleGroup(c.id, 'view')" @contextmenu.prevent="openGroupMenu($event, c.id, db)">
                       <span class="chevron">
                         <Icon :name="isCollapsed(c.id, 'view') ? 'chevronRight' : 'chevronDown'" :size="11" />
                       </span>
-                      视图 ({{ dbTablesOf(c.id, 'view').length }})
+                      视图 ({{ dbAllOf(c.id, 'view').length }})
                     </div>
                     <div v-show="!isCollapsed(c.id, 'view')" class="group-items db-indent">
                       <div
