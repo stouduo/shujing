@@ -326,7 +326,23 @@ impl Backend {
         match self {
             // sqlite 驱动是同步的;本地文件查询通常很快,占用一个 runtime worker 可接受
             Backend::Sqlite(conn) => run_sqlite(conn, sql, max),
-            Backend::MySql(conn) => run_mysql(conn, sql, max).await,
+            Backend::MySql(mp) => {
+                use mysql_async::prelude::*;
+                let mut conn = mp.pool.get_conn().await.map_err(es)?;
+                // 每次取连接恢复会话库,多连接下上下文保持一致
+                if let Some(db) = mp.session_db.clone() {
+                    conn.query_drop(format!("USE `{}`", db.replace('`', "``")))
+                        .await
+                        .map_err(es)?;
+                }
+                let r = run_mysql(&mut conn, sql, max).await;
+                if r.is_ok() {
+                    if let Some(db) = crate::model::extract_use_db(sql) {
+                        mp.session_db = Some(db);
+                    }
+                }
+                r
+            }
             Backend::Pg(client) => run_pg(client, sql, max).await,
             Backend::Redis(_) => Err("Redis 请使用专门的命令通道".into()),
         }

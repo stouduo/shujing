@@ -110,16 +110,52 @@ pub struct ConnectResult {
 
 pub enum Backend {
     Sqlite(rusqlite::Connection),
-    MySql(mysql_async::Conn),
+    MySql(MySqlPool),
     Pg(tokio_postgres::Client),
     Redis(redis::Client),
+}
+
+/// MySQL 连接池 + 会话库上下文(每次取连接自动 USE 恢复)
+pub struct MySqlPool {
+    pub(crate) pool: mysql_async::Pool,
+    pub(crate) session_db: Option<String>,
+}
+
+/// 从 USE / SET search_path 语句提取库名
+pub fn extract_use_db(sql: &str) -> Option<String> {
+    let s = sql.trim();
+    let lower = s.to_lowercase();
+    if lower.starts_with("use ") {
+        let rest = s[4..].trim();
+        if let (Some(a), Some(b)) = (rest.find('`'), rest[1..].find('`').map(|i| i + 1)) {
+            if a < b {
+                return Some(rest[a + 1..b].to_string());
+            }
+        }
+        return rest
+            .split_whitespace()
+            .next()
+            .map(|w| w.trim_matches(';').to_string());
+    }
+    if lower.starts_with("set search_path") {
+        if let Some(i) = lower.find("to") {
+            let rest = s[i + 2..].trim();
+            let end = rest.find(',').unwrap_or(rest.len());
+            return Some(
+                rest[..end]
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches(';')
+                    .to_string(),
+            );
+        }
+    }
+    None
 }
 
 pub struct LiveConn {
     pub info: ConnInfo,
     pub backend: Backend,
-    /// 会话当前库(USE / SET search_path),断线重连后自动恢复
-    pub last_db: Option<String>,
 }
 
 #[derive(Default)]

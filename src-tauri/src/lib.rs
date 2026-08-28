@@ -46,13 +46,14 @@ async fn test_connection(info: ConnInfo) -> Result<ConnectResult, String> {
 #[tauri::command]
 async fn connect(state: State<'_, AppState>, info: ConnInfo) -> Result<ConnectResult, String> {
     let mut backend = backend::connect(&info).await?;
-    let version = backend.server_info().await?;
     // 重复连接同一 id(如改配置重连)时保留会话库记忆
-    let last_db = match state.inner().get(&info.id) {
-        Some(old) => old.lock().await.last_db.clone(),
+    let prev = match state.inner().get(&info.id) {
+        Some(old) => old.lock().await.backend.mysql_session_db().map(str::to_string),
         None => None,
     };
-    state.insert(LiveConn { info, backend, last_db });
+    backend.mysql_set_session_db(prev.as_deref());
+    let version = backend.server_info().await?;
+    state.insert(LiveConn { info, backend });
     Ok(ConnectResult { version })
 }
 
@@ -504,47 +505,6 @@ fn is_dead_conn(e: &str) -> bool {
     KEYS.iter().any(|k| s.contains(k))
 }
 
-/// 从 USE / SET search_path 语句提取库名(用于断线重连后恢复会话上下文)
-fn extract_use_db(sql: &str) -> Option<String> {
-    let s = sql.trim();
-    let lower = s.to_lowercase();
-    if lower.starts_with("use ") {
-        let rest = s[4..].trim();
-        if let (Some(a), Some(b)) = (rest.find('`'), rest[1..].find('`').map(|i| i + 1)) {
-            if a < b {
-                return Some(rest[a + 1..b].to_string());
-            }
-        }
-        return rest
-            .split_whitespace()
-            .next()
-            .map(|w| w.trim_matches(';').to_string());
-    }
-    if lower.starts_with("set search_path") {
-        if let Some(i) = lower.find("to") {
-            let rest = s[i + 2..].trim();
-            let end = rest.find(',').unwrap_or(rest.len());
-            return Some(
-                rest[..end]
-                    .trim()
-                    .trim_matches('"')
-                    .trim_matches(';')
-                    .to_string(),
-            );
-        }
-    }
-    None
-}
-
-/// 构造恢复会话库的 SQL
-fn use_db_sql(db_type: &model::DbType, db: &str) -> Option<String> {
-    match db_type {
-        model::DbType::MySql => Some(format!("USE `{}`", db.replace('`', "``"))),
-        model::DbType::Postgres => Some(format!("SET search_path TO \"{}\"", db.replace('"', "\"\""))),
-        _ => None,
-    }
-}
-
 /// 返回多结果集(PostgreSQL 完整支持;MySQL/SQLite 返回第一个结果集)
 #[tauri::command]
 async fn run_sql(
@@ -563,27 +523,19 @@ async fn run_sql(
         return Err("只读连接:仅允许 SELECT/WITH/EXPLAIN/SHOW/DESCRIBE/PRAGMA".into());
     }
     let max_rows = max_rows.unwrap_or(exec::DEFAULT_MAX_ROWS);
-    // 记录会话库切换,断线重连后据此恢复
-    if let Some(db) = extract_use_db(&sql) {
-        guard.last_db = Some(db);
-    }
     match guard.backend.run_sql(&sql, max_rows).await {
         Ok(r) => Ok(r),
         Err(e) => {
             if !is_dead_conn(&e) {
                 return Err(e);
             }
-            // 连接已失效(如空闲超时被服务端断开):重连一次并恢复上下文后重试
+            // 连接已整体失效(池不可用/网络中断):重建后端并恢复会话库后重试
             let info = guard.info.clone();
-            let last_db = guard.last_db.clone();
+            let session_db = guard.backend.mysql_session_db().map(str::to_string);
             let mut nb = backend::connect(&info).await.map_err(|e2| {
                 format!("连接已断开,自动重连失败: {e2}(原错误: {e})")
             })?;
-            if let Some(db) = last_db.as_deref() {
-                if let Some(stmt) = use_db_sql(&info.db_type, db) {
-                    let _ = nb.run_sql(&stmt, 1).await;
-                }
-            }
+            nb.mysql_set_session_db(session_db.as_deref());
             let r = nb.run_sql(&sql, max_rows).await.map_err(|e2| {
                 format!("{e2}(已自动重连)")
             })?;

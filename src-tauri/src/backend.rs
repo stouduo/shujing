@@ -30,16 +30,24 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
             let user = req(&info.user, "缺少用户名")?;
             let pass = info.password.as_deref().unwrap_or("");
             let db = info.database.as_deref().map(str::trim).filter(|s| !s.is_empty());
+            // 连接池:多标签页并发查询不再互斥排队;空闲连接由池回收
             let opts = mysql_async::OptsBuilder::default()
                 .ip_or_hostname(host)
                 .tcp_port(port)
                 .user(Some(user))
                 .pass(Some(pass))
-                .db_name(db);
-            let conn = mysql_async::Conn::new(opts)
-                .await
-                .map_err(|e| format!("连接 MySQL 失败: {e}"))?;
-            Ok(Backend::MySql(conn))
+                .db_name(db)
+                .pool_opts(
+                    mysql_async::PoolOpts::default().with_constraints(
+                        mysql_async::PoolConstraints::new(1, 8)
+                            .expect("min<=max"),
+                    ),
+                );
+            let pool = mysql_async::Pool::new(opts);
+            Ok(Backend::MySql(crate::model::MySqlPool {
+                pool,
+                session_db: None,
+            }))
         }
         DbType::Redis => {
             let host = req(&info.host, "缺少主机地址")?;
@@ -94,11 +102,39 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
 }
 
 impl Backend {
+    /// MySQL:从池取连接并恢复会话库上下文
+    pub(crate) async fn mysql_conn(
+        mp: &mut crate::model::MySqlPool,
+    ) -> Result<mysql_async::Conn, String> {
+        use mysql_async::prelude::*;
+        let mut conn = mp.pool.get_conn().await.map_err(es)?;
+        if let Some(db) = mp.session_db.clone() {
+            conn.query_drop(format!("USE `{}`", db.replace('`', "``")))
+                .await
+                .map_err(es)?;
+        }
+        Ok(conn)
+    }
+
+    pub fn mysql_session_db(&self) -> Option<&str> {
+        match self {
+            Backend::MySql(mp) => mp.session_db.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub fn mysql_set_session_db(&mut self, db: Option<&str>) {
+        if let Backend::MySql(mp) = self {
+            mp.session_db = db.map(str::to_string);
+        }
+    }
+
     pub async fn server_info(&mut self) -> Result<String, String> {
         match self {
             Backend::Sqlite(_) => Ok(format!("SQLite {}", rusqlite::version())),
-            Backend::MySql(conn) => {
+            Backend::MySql(mp) => {
                 use mysql_async::prelude::*;
+                let mut conn = mp.pool.get_conn().await.map_err(es)?;
                 let mut result = conn.query_iter("SELECT VERSION()").await.map_err(es)?;
                 let mut version = String::new();
                 result

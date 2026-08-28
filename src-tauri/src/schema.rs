@@ -107,8 +107,9 @@ async fn fk_pg(client: &tokio_postgres::Client) -> Result<Vec<FkMeta>, String> {
 pub async fn list_databases(backend: &mut Backend, info: &ConnInfo) -> Result<Vec<String>, String> {
     match backend {
         Backend::Sqlite(_) => Ok(vec![]),
-        Backend::MySql(conn) => {
+        Backend::MySql(mp) => {
             use mysql_async::prelude::*;
+            let mut conn = mp.pool.get_conn().await.map_err(es)?;
             let mut result = conn
                 .query_iter("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys') ORDER BY SCHEMA_NAME")
                 .await
@@ -580,11 +581,12 @@ impl Backend {
     pub async fn list_tables_in(&mut self, info: &crate::model::ConnInfo, database: Option<&str>) -> Result<Vec<TableMeta>, String> {
         match self {
             Backend::Sqlite(conn) => schema_sqlite(conn),
-            Backend::MySql(conn) => {
+            Backend::MySql(mp) => {
+                let mut conn = mp.pool.get_conn().await.map_err(es)?;
                 let db = database.map(str::trim)
                     .filter(|s| !s.is_empty())
                     .ok_or_else(|| "未指定数据库".to_string())?;
-                schema_mysql(conn, db).await
+                schema_mysql(&mut conn, db).await
             }
             Backend::Pg(client) => schema_pg(client).await,
             Backend::Redis(_) => crate::redis_ops::databases(self).await.map(|dbs| {
@@ -635,9 +637,10 @@ async fn resolve_mysql_db(
     pub async fn get_table_structure(&mut self, info: &ConnInfo, table: &str) -> Result<TableStructure, String> {
         match self {
             Backend::Sqlite(conn) => struct_sqlite(conn, table),
-            Backend::MySql(conn) => {
-                let db = Self::resolve_mysql_db(conn, info, None).await?;
-                struct_mysql(conn, &db, table).await
+            Backend::MySql(mp) => {
+                let mut conn = mp.pool.get_conn().await.map_err(es)?;
+                let db = Self::resolve_mysql_db(&mut conn, info, None).await?;
+                struct_mysql(&mut conn, &db, table).await
             }
             Backend::Pg(client) => struct_pg(client, table).await,
             Backend::Redis(_) => Err("Redis 无表结构".into()),
@@ -647,7 +650,10 @@ async fn resolve_mysql_db(
     pub async fn count_rows(&mut self, table: &str) -> Result<u64, String> {
         match self {
             Backend::Sqlite(conn) => count_sqlite(conn, table),
-            Backend::MySql(conn) => count_mysql(conn, table).await,
+            Backend::MySql(mp) => {
+                let mut conn = mp.pool.get_conn().await.map_err(es)?;
+                count_mysql(&mut conn, table).await
+            }
             Backend::Pg(client) => count_pg(client, table).await,
             Backend::Redis(_) => Err("Redis 无表计数".into()),
         }
@@ -656,9 +662,10 @@ async fn resolve_mysql_db(
     pub async fn list_foreign_keys(&mut self, info: &ConnInfo) -> Result<Vec<FkMeta>, String> {
         match self {
             Backend::Sqlite(conn) => fk_sqlite(conn),
-            Backend::MySql(conn) => {
-                let db = Self::resolve_mysql_db(conn, info, None).await?;
-                fk_mysql(conn, &db).await
+            Backend::MySql(mp) => {
+                let mut conn = mp.pool.get_conn().await.map_err(es)?;
+                let db = Self::resolve_mysql_db(&mut conn, info, None).await?;
+                fk_mysql(&mut conn, &db).await
             }
             Backend::Pg(client) => fk_pg(client).await,
             Backend::Redis(_) => Ok(vec![]),
