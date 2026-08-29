@@ -32,8 +32,18 @@ jobs:
       - name: 构建(Tauri)
         run: npm run tauri build
 
+      - name: 重命名 dmg(ASCII 安全)
+        run: |
+          mkdir -p dist
+          for f in src-tauri/target/release/bundle/dmg/*.dmg; do
+            base=$(basename "$f")
+            newname=$(echo "$base" | sed 's/数镜/shujing/')
+            cp "$f" "dist/$newname"
+          done
+          ls -lah dist
+
       - name: 发布 Release 并上传 dmg
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/bundle/dmg/*.dmg
+          files: dist/*.dmg
           generate_release_notes: true
