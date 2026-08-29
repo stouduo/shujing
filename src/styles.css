@@ -276,6 +276,22 @@ html.in-tauri .sidebar .brand {
   line-height: 1;
   cursor: pointer;
 }
+.tab-list-btn {
+  width: 22px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab-list-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
 .tab-add:hover {
   background: var(--bg-hover);
   color: var(--text);

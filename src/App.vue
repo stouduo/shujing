@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import {
   NConfigProvider,
   NDialogProvider,
@@ -112,6 +112,41 @@ function onTabsContextmenu(e: MouseEvent) {
   const el = (e.target as HTMLElement)?.closest?.('.tab[data-tab-id]')
   if (!el) return
   openTabCtx(e, (el as HTMLElement).dataset.tabId as string)
+}
+
+// ── 标签溢出:滚轮横滚 + 全部标签列表 ─────────────────
+function onTabsWheel(e: WheelEvent) {
+  const el = tabsEl.value
+  if (!el) return
+  if (Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+    el.scrollLeft += e.deltaY
+    e.preventDefault()
+  }
+}
+
+// 激活标签自动滚入视野
+watch(
+  () => store.activeTabId,
+  async (id) => {
+    if (!id) return
+    await nextTick()
+    tabsEl.value
+      ?.querySelector(`.tab[data-tab-id="${id}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  },
+)
+
+const tabListShow = ref(false)
+const tabListPos = ref({ x: 0, y: 0 })
+const tabListOptions = computed(() =>
+  store.tabs.map((t) => ({
+    label: (t.id === store.activeTabId ? '● ' : '') + t.title,
+    key: t.id,
+  })),
+)
+function openTabList(e: MouseEvent) {
+  tabListPos.value = { x: e.clientX, y: e.clientY }
+  tabListShow.value = !tabListShow.value
 }
 
 function closeOthers(id: string) {
@@ -405,6 +440,7 @@ function openEdit(info: ConnInfo) {
                 role="tablist"
                 ref="tabsEl"
                 @contextmenu.capture="onTabsContextmenu"
+                @wheel="onTabsWheel"
               >
                 <div
                   v-for="t in store.tabs"
@@ -442,6 +478,9 @@ function openEdit(info: ConnInfo) {
                   </button>
                 </div>
               </div>
+              <button class="tab-list-btn" title="全部标签" @click.stop="openTabList($event)">
+                <Icon name="chevronDown" :size="12" />
+              </button>
               <button class="tab-add" title="新建查询 (⌘T)" @click="store.openQueryTab()">
                 <Icon name="plus" :size="14" />
               </button>
@@ -497,6 +536,19 @@ function openEdit(info: ConnInfo) {
             else if (k === 'others') closeOthers(id)
           }"
           @clickoutside="tabCtx.show = false"
+        />
+        <n-dropdown
+          trigger="manual"
+          :show="tabListShow"
+          :x="tabListPos.x"
+          :y="tabListPos.y"
+          :options="tabListOptions"
+          placement="bottom-start"
+          @select="(k: string | number) => {
+            tabListShow = false
+            store.activeTabId = String(k)
+          }"
+          @clickoutside="tabListShow = false"
         />
         <Teleport to="body">
           <div v-if="showKeys" class="keys-overlay" @click.self="showKeys = false">
