@@ -102,16 +102,20 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
 }
 
 impl Backend {
-    /// MySQL:从池取连接并恢复会话库上下文
+    /// MySQL:从池取连接并恢复会话库上下文(库已删除时清除记忆,不阻断取连接)
     pub(crate) async fn mysql_conn(
         mp: &mut crate::model::MySqlPool,
     ) -> Result<mysql_async::Conn, String> {
         use mysql_async::prelude::*;
         let mut conn = mp.pool.get_conn().await.map_err(es)?;
         if let Some(db) = mp.session_db.clone() {
-            conn.query_drop(format!("USE `{}`", db.replace('`', "``")))
+            if conn
+                .query_drop(format!("USE `{}`", db.replace('`', "``")))
                 .await
-                .map_err(es)?;
+                .is_err()
+            {
+                mp.session_db = None;
+            }
         }
         Ok(conn)
     }

@@ -109,7 +109,7 @@ pub async fn list_databases(backend: &mut Backend, info: &ConnInfo) -> Result<Ve
         Backend::Sqlite(_) => Ok(vec![]),
         Backend::MySql(mp) => {
             use mysql_async::prelude::*;
-            let mut conn = mp.pool.get_conn().await.map_err(es)?;
+            let mut conn = Backend::mysql_conn(mp).await?;
             let mut result = conn
                 .query_iter("SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys') ORDER BY SCHEMA_NAME")
                 .await
@@ -582,7 +582,7 @@ impl Backend {
         match self {
             Backend::Sqlite(conn) => schema_sqlite(conn),
             Backend::MySql(mp) => {
-                let mut conn = mp.pool.get_conn().await.map_err(es)?;
+                let mut conn = Backend::mysql_conn(mp).await?;
                 let db = database.map(str::trim)
                     .filter(|s| !s.is_empty())
                     .ok_or_else(|| "未指定数据库".to_string())?;
@@ -638,7 +638,7 @@ async fn resolve_mysql_db(
         match self {
             Backend::Sqlite(conn) => struct_sqlite(conn, table),
             Backend::MySql(mp) => {
-                let mut conn = mp.pool.get_conn().await.map_err(es)?;
+                let mut conn = Backend::mysql_conn(mp).await?;
                 let db = Self::resolve_mysql_db(&mut conn, info, None).await?;
                 struct_mysql(&mut conn, &db, table).await
             }
@@ -651,7 +651,7 @@ async fn resolve_mysql_db(
         match self {
             Backend::Sqlite(conn) => count_sqlite(conn, table),
             Backend::MySql(mp) => {
-                let mut conn = mp.pool.get_conn().await.map_err(es)?;
+                let mut conn = Backend::mysql_conn(mp).await?;
                 count_mysql(&mut conn, table).await
             }
             Backend::Pg(client) => count_pg(client, table).await,
@@ -663,7 +663,7 @@ async fn resolve_mysql_db(
         match self {
             Backend::Sqlite(conn) => fk_sqlite(conn),
             Backend::MySql(mp) => {
-                let mut conn = mp.pool.get_conn().await.map_err(es)?;
+                let mut conn = Backend::mysql_conn(mp).await?;
                 let db = Self::resolve_mysql_db(&mut conn, info, None).await?;
                 fk_mysql(&mut conn, &db).await
             }
