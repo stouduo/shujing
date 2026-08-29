@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NButton, useMessage } from 'naive-ui'
 import { useAppStore } from '../stores/app'
-import type { StructureTab } from '../types'
+import type { ColumnSpec, StructureTab } from '../types'
 import Icon from './Icon.vue'
 
 const props = defineProps<{ tab: StructureTab }>()
@@ -30,6 +30,118 @@ function copyDdl() {
   if (!ddl.value.trim()) return
   copyText(ddl.value, 'DDL 已复制')
 }
+
+// ── 结构编辑:驱动一个并行设计器标签,复用其 ALTER 生成与执行 ──
+const editing = ref(false)
+const applying = ref(false)
+const designerTabId = ref<string | null>(null)
+
+const readOnly = computed(() => {
+  const c = props.tab.connId ? store.connById(props.tab.connId) : undefined
+  return !!c?.readOnly
+})
+
+/** 承载编辑的设计器标签(同连接同表,复用已打开的) */
+const dtab = computed(() =>
+  designerTabId.value
+    ? store.tabs.find(
+        (t) => t.id === designerTabId.value && t.kind === 'designer',
+      )
+    : null,
+)
+const editCols = computed<ColumnSpec[]>(() =>
+  dtab.value && dtab.value.kind === 'designer' ? dtab.value.columns : [],
+)
+
+async function beginEdit() {
+  const cid = props.tab.connId
+  if (!cid) return
+  let d = store.tabs.find(
+    (t) =>
+      t.kind === 'designer' &&
+      t.mode === 'edit' &&
+      t.connId === cid &&
+      t.tableName === props.tab.table,
+  )
+  if (!d) {
+    await store.openDesigner(cid, props.tab.table)
+    d = store.tabs.find(
+      (t) =>
+        t.kind === 'designer' &&
+        t.mode === 'edit' &&
+        t.connId === cid &&
+        t.tableName === props.tab.table,
+    )
+  }
+  if (!d || d.kind !== 'designer') {
+    message.error('无法打开结构编辑器')
+    return
+  }
+  designerTabId.value = d.id
+  // 留在结构页编辑(设计器标签仅在后台承载状态)
+  store.activeTabId = props.tab.id
+  editing.value = true
+}
+
+function discardEdit() {
+  if (designerTabId.value) store.closeTab(designerTabId.value)
+  designerTabId.value = null
+  editing.value = false
+}
+
+const previewSql = computed(() => {
+  if (!designerTabId.value) return '-- 进入编辑后,修改字段将在此生成 ALTER 语句'
+  const { create, alters, warnings } = store.designerSql(designerTabId.value)
+  const parts: string[] = []
+  if (create) parts.push(create)
+  parts.push(...alters)
+  if (warnings.length) parts.push('-- ' + warnings.join('\n-- '))
+  return parts.join('\n\n') || '-- 暂无变更'
+})
+
+async function applyEdit() {
+  if (!designerTabId.value || applying.value) return
+  applying.value = true
+  try {
+    await store.saveDesigner(designerTabId.value)
+    const d = store.tabs.find((t) => t.id === designerTabId.value)
+    if (d && d.kind === 'designer' && d.error) {
+      message.error(d.error)
+    } else {
+      message.success('结构变更已应用')
+    }
+    if (designerTabId.value) store.closeTab(designerTabId.value)
+    designerTabId.value = null
+    editing.value = false
+    refresh()
+  } finally {
+    applying.value = false
+  }
+}
+
+function addField() {
+  if (!dtab.value || dtab.value.kind !== 'designer') return
+  dtab.value.columns.push({
+    name: '',
+    dataType: 'VARCHAR',
+    length: '255',
+    nullable: true,
+    pk: false,
+    autoInc: false,
+    default: '',
+    comment: '',
+    existing: false,
+  })
+}
+
+function removeField(i: number) {
+  const c = editCols.value[i]
+  if (!c || c.existing) {
+    message.warning('编辑模式暂不支持删除已有字段(避免误删数据)')
+    return
+  }
+  dtab.value?.kind === 'designer' && dtab.value.columns.splice(i, 1)
+}
 </script>
 
 <template>
@@ -39,12 +151,31 @@ function copyDdl() {
         <Icon name="table" :size="13" class="tbl-ic" /> {{ tab.table }}
       </span>
       <div class="seg-group">
-        <n-button size="small" quaternary :loading="tab.loading" title="刷新 (F5)" @click="refresh">
-          <Icon name="refresh" :size="13" />
-        </n-button>
-        <n-button size="small" quaternary title="复制建表 DDL" :disabled="!ddl.trim()" @click="copyDdl">
-          <Icon name="copy" :size="13" /> 复制 DDL
-        </n-button>
+        <template v-if="!editing">
+          <n-button size="small" quaternary :loading="tab.loading" title="刷新 (F5)" @click="refresh">
+            <Icon name="refresh" :size="13" />
+          </n-button>
+          <n-button size="small" quaternary title="复制建表 DDL" :disabled="!ddl.trim()" @click="copyDdl">
+            <Icon name="copy" :size="13" /> 复制 DDL
+          </n-button>
+          <n-button
+            size="small"
+            quaternary
+            type="primary"
+            :disabled="readOnly"
+            :title="readOnly ? '只读连接不可编辑' : '进入结构编辑(改列/加列)'"
+            @click="beginEdit"
+          >
+            <Icon name="pencil" :size="13" /> 编辑结构
+          </n-button>
+        </template>
+        <template v-else>
+          <span class="edit-badge">编辑中</span>
+          <n-button size="small" quaternary @click="discardEdit">放弃</n-button>
+          <n-button size="small" type="primary" :loading="applying" @click="applyEdit">
+            <Icon name="save" :size="13" /> 应用更改
+          </n-button>
+        </template>
       </div>
       <div class="spacer" data-tauri-drag-region />
     </div>
@@ -52,6 +183,41 @@ function copyDdl() {
     <div v-if="tab.error" class="err mono">{{ tab.error }}</div>
     <div v-else-if="tab.loading && !tab.data" class="empty">加载中…</div>
     <div v-else-if="!tab.data" class="empty">暂无数据</div>
+
+    <!-- 编辑模式 -->
+    <div v-else-if="editing" class="scroll">
+      <div class="cols-head">
+        <div class="c-name">字段名</div>
+        <div class="c-type">类型</div>
+        <div class="c-len">长度</div>
+        <div class="c-bool" title="非空">NOT NULL</div>
+        <div class="c-default">默认值</div>
+        <div class="c-comment">注释</div>
+        <div class="c-op" />
+      </div>
+      <div v-for="(c, i) in editCols" :key="i" class="col-row">
+        <div class="c-name"><input v-model="c.name" class="e-input mono" placeholder="name" /></div>
+        <div class="c-type"><input v-model="c.dataType" class="e-input mono" placeholder="VARCHAR" /></div>
+        <div class="c-len"><input v-model="c.length" class="e-input mono" placeholder="-" /></div>
+        <div class="c-bool">
+          <input type="checkbox" class="cb" :checked="!c.nullable" @change="c.nullable = !($event.target as HTMLInputElement).checked" />
+        </div>
+        <div class="c-default"><input v-model="c.default" class="e-input mono" /></div>
+        <div class="c-comment"><input v-model="c.comment" class="e-input" /></div>
+        <div class="c-op">
+          <button class="f-del" :disabled="c.existing" :title="c.existing ? '已有字段不支持删除' : '删除字段'" @click="removeField(i)">−</button>
+        </div>
+      </div>
+      <button class="add-field" @click="addField">
+        <Icon name="plus" :size="12" /> 添加字段
+      </button>
+      <div class="preview">
+        <div class="preview-title">SQL 预览(应用更改时执行)</div>
+        <pre class="preview-sql mono">{{ previewSql }}</pre>
+      </div>
+    </div>
+
+    <!-- 查看模式 -->
     <div v-else class="scroll">
       <!-- 字段 -->
       <div class="sec-block">
@@ -142,6 +308,15 @@ function copyDdl() {
 .spacer {
   flex: 1;
 }
+.edit-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn);
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 159, 10, 0.35);
+  background: rgba(255, 159, 10, 0.1);
+  border-radius: 6px;
+}
 .scroll {
   flex: 1;
   min-height: 0;
@@ -221,5 +396,138 @@ function copyDdl() {
   justify-content: center;
   color: var(--text-tertiary);
   font-size: 12.5px;
+}
+
+/* ── 编辑模式 ── */
+.cols-head,
+.col-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cols-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  padding: 0 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.col-row {
+  padding: 3px 0 3px 4px;
+  border-radius: 6px;
+}
+.col-row:hover {
+  background: var(--bg-hover);
+}
+.c-name {
+  width: 170px;
+  flex-shrink: 0;
+}
+.c-type {
+  width: 140px;
+  flex-shrink: 0;
+}
+.c-len {
+  width: 72px;
+  flex-shrink: 0;
+}
+.c-bool {
+  width: 70px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.c-default {
+  width: 130px;
+  flex-shrink: 0;
+}
+.c-comment {
+  flex: 1;
+  min-width: 80px;
+}
+.c-op {
+  width: 30px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.e-input {
+  width: 100%;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 12px;
+  padding: 0 6px;
+  outline: none;
+}
+.e-input:focus {
+  border-color: var(--accent);
+}
+.cb {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.f-del {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.f-del:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.f-del:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.add-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 12px;
+  margin-top: 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.add-field:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.preview {
+  margin-top: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-grid);
+  overflow: hidden;
+}
+.preview-title {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  background: var(--bg-head);
+  border-bottom: 1px solid var(--border);
+}
+.preview-sql {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--cell-color);
+  white-space: pre-wrap;
+  user-select: text;
+  max-height: 220px;
+  overflow: auto;
 }
 </style>
