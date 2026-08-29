@@ -46,4 +46,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.dmg
-          generate_release_notes: true
+          body_path: .github/release_body.md
+
+      - name: 清理旧命名资产
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep '^_' | while read -r a; do
+            gh release delete-asset "$GITHUB_REF_NAME" "$a" --yes
+          done
