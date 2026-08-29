@@ -995,8 +995,10 @@ defineExpose({
 }
 .row {
   display: flex;
-  /* 行内布局变化不外溢,宽表滚动时减少全局重排 */
-  contain: layout paint style;
+  /* 行宽随内容伸展,zebra 背景铺满可视区;contain 不能用 paint(会裁掉滚动出界的单元格) */
+  width: max-content;
+  min-width: 100%;
+  contain: layout style;
 }
 .row:hover {
   background: var(--row-hover);
