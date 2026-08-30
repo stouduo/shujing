@@ -4,7 +4,8 @@ import { NButton, NDropdown, NInput, NSelect, NSplit, useMessage, type DropdownO
 import * as api from '../api'
 import { useAppStore } from '../stores/app'
 import { histSql, histDb } from '../stores/helpers'
-import type { ExecResult, OrderDir, QueryTab } from '../types'
+import type { OrderDir, QueryTab } from '../types'
+import { processRows } from '../workers/resultWorker'
 import ResultsGrid from './ResultsGrid.vue'
 import ResultActions from './ResultActions.vue'
 import RecordPanel from './RecordPanel.vue'
@@ -282,9 +283,9 @@ async function eqSave() {
 
 /** 合并未保存变更后的行(供 ResultsGrid changes prop 语义一致) */
 
-// ── 结果二次加工:内存筛选 + 排序(不重查数据库) ──────
+// ── 结果二次加工:筛选/排序管线(大结果集走 Worker,不冻结界面) ──
 const memFilter = ref('')
-/** 防抖后的筛选词:大结果集逐键全量扫描会卡输入 */
+/** 防抖后的筛选词 */
 const memFilterApplied = ref('')
 let memFilterTimer: ReturnType<typeof setTimeout> | undefined
 watch(memFilter, (v) => {
@@ -294,6 +295,87 @@ watch(memFilter, (v) => {
 const memSort = ref<{ key: string | null; dir: OrderDir }>({ key: null, dir: 'asc' })
 const selectedRow = ref<number | null>(null)
 
+/** 加工后的保留行号(null = 未加工,即全量原序) */
+const viewIdx = ref<number[] | null>(null)
+const viewBuilding = ref(false)
+let vpSeq = 0
+let vpWorker: Worker | null = null
+/** null = 未探测;false = Worker 不可用(回退主线程) */
+let vpWorkerOk: boolean | null = null
+
+/** 小结果集阈值:以内走主线程同步计算,免 Worker 往返 */
+const SYNC_MAX = 20000
+
+function scheduleProcess() {
+  const r = activeResult.value
+  if (!r) {
+    viewIdx.value = null
+    return
+  }
+  const kw = memFilterApplied.value
+  const key = memSort.value.key
+  const colIdx = key ? r.columns.indexOf(key) : -1
+  const dir = memSort.value.dir
+  if (r.rows.length <= SYNC_MAX || vpWorkerOk === false) {
+    viewIdx.value = processRows(r.rows, kw, colIdx, dir)
+    viewBuilding.value = false
+    return
+  }
+  if (vpWorkerOk === null) {
+    try {
+      vpWorker = new Worker(new URL('../workers/resultWorker.ts', import.meta.url), { type: 'module' })
+      vpWorker.onmessage = (e: MessageEvent) => {
+        const d = e.data as { id: number; indices: number[] }
+        if (d.id !== vpSeq) return
+        viewIdx.value = d.indices
+        viewBuilding.value = false
+      }
+      vpWorker.onerror = () => {
+        vpWorker = null
+        vpWorkerOk = false
+        viewBuilding.value = false
+        scheduleProcess()
+      }
+      vpWorkerOk = true
+    } catch {
+      vpWorkerOk = false
+    }
+  }
+  if (vpWorker) {
+    const seq = ++vpSeq
+    viewBuilding.value = true
+    vpWorker.postMessage({ id: seq, rows: r.rows, keyword: kw, sortCol: colIdx, sortDir: dir })
+  } else {
+    viewIdx.value = processRows(r.rows, kw, colIdx, dir)
+  }
+}
+
+watch(
+  [activeResult, memFilterApplied, () => ({ ...memSort.value })],
+  () => scheduleProcess(),
+  { immediate: true },
+)
+
+const viewResult = computed(() => {
+  const r = activeResult.value
+  if (!r) return null
+  const idx = viewIdx.value
+  if (!idx) return r
+  if (idx.length === r.rows.length) {
+    // 未筛选:检查是否仍为原序(排序后仍需重建数组)
+    let identity = true
+    for (let i = 0; i < idx.length; i++) {
+      if (idx[i] !== i) {
+        identity = false
+        break
+      }
+    }
+    if (identity) return r
+  }
+  return { ...r, rows: idx.map((i) => r.rows[i]), truncated: false }
+})
+
+// 新结果到达:重置二次加工输入与视图
 watch(
   () => [props.tab.results, props.tab.activeSet] as const,
   () => {
@@ -301,37 +383,9 @@ watch(
     memFilterApplied.value = ''
     memSort.value = { key: null, dir: 'asc' }
     selectedRow.value = null
+    viewIdx.value = null
   },
 )
-
-const viewResult = computed<ExecResult | null>(() => {
-  const r = activeResult.value
-  if (!r) return null
-  let rows = r.rows
-  const kw = memFilterApplied.value.trim().toLowerCase()
-  if (kw) {
-    rows = rows.filter((row) => row.some((c) => c !== null && c.toLowerCase().includes(kw)))
-  }
-  if (memSort.value.key) {
-    const i = r.columns.indexOf(memSort.value.key)
-    if (i >= 0) {
-      const dir = memSort.value.dir === 'asc' ? 1 : -1
-      rows = [...rows].sort((a, b) => {
-        const x = a[i] ?? ''
-        const y = b[i] ?? ''
-        const nx = Number(x)
-        const ny = Number(y)
-        const cmp =
-          x !== '' && y !== '' && !Number.isNaN(nx) && !Number.isNaN(ny)
-            ? nx - ny
-            : String(x).localeCompare(String(y), undefined, { numeric: true })
-        return cmp * dir
-      })
-    }
-  }
-  if (rows === r.rows) return r
-  return { ...r, rows, truncated: false }
-})
 
 function onMemSort(col: string, dir?: 'asc' | 'desc' | null) {
   if (dir !== undefined) {
@@ -361,7 +415,8 @@ const meta = computed(() => {
   if (r.columns.length === 0) return `影响 ${r.affected} 行 · ${r.elapsedMs} ms`
   const n = viewResult.value?.rows.length ?? r.rows.length
   const mark = n !== r.rows.length ? `${n}/${r.rows.length}` : `${r.rows.length}`
-  return `${mark}${r.truncated ? '+' : ''} 行 · ${r.elapsedMs} ms`
+  const building = viewBuilding.value ? '计算中… · ' : ''
+  return `${building}${mark}${r.truncated ? '+' : ''} 行 · ${r.elapsedMs} ms`
 })
 
 // ── SQL 片段 ──────────────────────────────────────────
