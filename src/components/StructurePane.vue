@@ -31,6 +31,37 @@ function copyDdl() {
   copyText(ddl.value, 'DDL 已复制')
 }
 
+function escapeHtmlDdl(s: string): string {
+  return s.replace(/[&<>]/g, (ch: string) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch] as string,
+  )
+}
+
+/** DDL 简易语法着色:关键字/字符串/注释 */
+const KEYWORDS =
+  /^(CREATE|TABLE|IF|NOT|EXISTS|PRIMARY|KEY|UNIQUE|INDEX|DEFAULT|NULL|AUTO_INCREMENT|COMMENT|CONSTRAINT|FOREIGN|REFERENCES|ENGINE|CHARSET|COLLATE|INT|INTEGER|TINYINT|BIGINT|VARCHAR|CHAR|TEXT|DATE|DATETIME|TIMESTAMP|DECIMAL|DOUBLE|FLOAT|BOOLEAN|BLOB|JSON)$/i
+
+function highlightDdl(src: string): string {
+  let out = ''
+  const re = /('(?:[^']|'')*')|(--[^\n]*)/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    out += colorWords(src.slice(last, m.index))
+    const seg = m[0]
+    if (seg.startsWith("'")) out += `<span class="tk-str">${escapeHtmlDdl(seg)}</span>`
+    else out += `<span class="tk-com">${escapeHtmlDdl(seg)}</span>`
+    last = m.index + seg.length
+  }
+  out += colorWords(src.slice(last))
+  return out
+}
+function colorWords(seg: string): string {
+  return escapeHtmlDdl(seg).replace(/([A-Za-z_][A-Za-z0-9_]*)/g, (w: string) =>
+    KEYWORDS.test(w) ? `<span class="tk-kw">${w}</span>` : w,
+  )
+}
+
 // ── 结构编辑:驱动一个并行设计器标签,复用其 ALTER 生成与执行 ──
 const editing = ref(false)
 const applying = ref(false)
@@ -260,7 +291,7 @@ function removeField(i: number) {
       <!-- DDL -->
       <div class="sec-block">
         <div class="sec-head">DDL (建表语句)</div>
-        <pre v-if="ddl.trim()" class="ddl-pre mono">{{ ddl }}</pre>
+        <pre v-if="ddl.trim()" class="ddl-pre mono" v-html="highlightDdl(ddl)"></pre>
         <div v-else class="ddl-empty">当前连接类型不提供 DDL</div>
       </div>
     </div>
@@ -372,6 +403,17 @@ function removeField(i: number) {
   word-break: break-all;
   color: var(--text);
   user-select: text;
+}
+.ddl-pre :deep(.tk-kw) {
+  color: #7cb8ff;
+  font-weight: 600;
+}
+.ddl-pre :deep(.tk-str) {
+  color: #ffd479;
+}
+.ddl-pre :deep(.tk-com) {
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 .ddl-empty {
   font-size: 12px;

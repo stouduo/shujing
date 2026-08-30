@@ -13,6 +13,8 @@ import RecordPanel from './RecordPanel.vue'
 import AddRowsModal from './AddRowsModal.vue'
 import Icon from './Icon.vue'
 
+// 隐藏实例:承载勾选行导出(通过 ref 调用其导出方法)
+
 const props = defineProps<{ tab: TableTab }>()
 const store = useAppStore()
 const message = useMessage()
@@ -74,6 +76,25 @@ function toggleRowHeight() {
 }
 
 const checkedN = computed(() => Object.keys(props.tab.checkedRows).length)
+
+// ── 勾选行导出:构造勾选子集,复用 ResultActions 的导出实现 ──
+const checkedExportRef = ref<InstanceType<typeof ResultActions> | null>(null)
+const checkedResult = computed(() => {
+  if (!props.tab.result || !checkedN.value) return null
+  const idxs = Object.keys(props.tab.checkedRows)
+    .map(Number)
+    .sort((a, b) => a - b)
+  const rows = idxs.map((i) => props.tab.result!.rows[i]).filter((r) => !!r)
+  if (!rows.length) return null
+  return { ...props.tab.result, rows }
+})
+function exportChecked(fmt: 'csv' | 'xlsx') {
+  if (!checkedResult.value) {
+    message.warning('请先勾选要导出的行')
+    return
+  }
+  checkedExportRef.value?.[fmt === 'csv' ? 'exportCsv' : 'exportXlsx']()
+}
 
 function copyCheckedInsert() {
   const t = props.tab
@@ -455,6 +476,8 @@ function onFilterCol(col: string, op = '=') {
         <Icon name="trash" :size="12" /> 标记删除
       </n-button>
       <n-button size="tiny" quaternary @click="store.checkPage(tab.id, false)">取消全选</n-button>
+      <n-button size="tiny" quaternary title="将勾选行导出为 CSV 文件" @click="exportChecked('csv')">导出 CSV</n-button>
+      <n-button size="tiny" quaternary title="将勾选行导出为 Excel 文件" @click="exportChecked('xlsx')">导出 Excel</n-button>
       <div class="f-spacer" />
     </div>
     <div v-if="hasChanges" class="changes-bar">
@@ -479,6 +502,10 @@ function onFilterCol(col: string, op = '=') {
       :conn-id="tab.connId"
       :table="tab.table"
     />
+    <!-- 勾选行导出的隐藏驱动实例 -->
+    <div v-show="false" aria-hidden="true">
+      <ResultActions v-if="checkedResult" ref="checkedExportRef" :result="checkedResult" :base-name="tab.table" />
+    </div>
     <div class="pager">
       <div class="pager-left">
         <n-select

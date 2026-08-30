@@ -30,7 +30,7 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
             let user = req(&info.user, "缺少用户名")?;
             let pass = info.password.as_deref().unwrap_or("");
             let db = info.database.as_deref().map(str::trim).filter(|s| !s.is_empty());
-            // 连接池:多标签页并发查询不再互斥排队;空闲连接由池回收
+            // 连接池:多标签页并发查询不再互斥排队;保持 2 条热连接
             let opts = mysql_async::OptsBuilder::default()
                 .ip_or_hostname(host)
                 .tcp_port(port)
@@ -39,8 +39,7 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
                 .db_name(db)
                 .pool_opts(
                     mysql_async::PoolOpts::default().with_constraints(
-                        mysql_async::PoolConstraints::new(1, 8)
-                            .expect("min<=max"),
+                        mysql_async::PoolConstraints::new(2, 8).expect("min<=max"),
                     ),
                 );
             let pool = mysql_async::Pool::new(opts);

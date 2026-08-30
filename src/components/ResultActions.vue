@@ -145,6 +145,8 @@ async function exportCsv() {
     message.error(String(e))
   }
 }
+
+defineExpose({ exportCsv, exportXlsx })
 </script>
 
 <template>

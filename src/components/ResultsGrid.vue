@@ -147,25 +147,72 @@ function onGridKeydown(e: KeyboardEvent) {
 
 // ── 结果内搜索(⌘F) ──────────────────────────────────
 const searchText = ref('')
-/** 防抖后的搜索词:大结果集逐键全表扫描会卡输入 */
+/** 防抖后的搜索词 */
 const searchApplied = ref('')
+/** 搜索进行中(Worker 扫描大结果集) */
+const searching = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | undefined
+
+const searchMatches = ref(new Set<number>())
+const searchList = computed(() => [...searchMatches.value].sort((a, b) => a - b))
+const searchCursor = ref(0)
 watch(searchText, (v) => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => (searchApplied.value = v), 200)
 })
-const searchMatches = computed(() => {
-  const q = searchApplied.value.trim().toLowerCase()
-  if (!q) return new Set<number>()
+
+function scanInPlace(rows: (string | null)[][], q: string): Set<number> {
   const set = new Set<number>()
-  props.rows.forEach((row, r) => {
-    if (row.some((c) => c !== null && c.toLowerCase().includes(q))) set.add(r)
+  const ql = q.trim().toLowerCase()
+  if (!ql) return set
+  rows.forEach((row, r) => {
+    if (row.some((c) => c !== null && c.toLowerCase().includes(ql))) set.add(r)
   })
   return set
+}
+
+// Worker:全表扫描移出主线程;创建失败时回退主线程扫描
+let searchWorker: Worker | null = null
+let searchSeq = 0
+
+function ensureSearchWorker(): boolean {
+  if (searchWorker) return true
+  try {
+    searchWorker = new Worker(new URL('../workers/searchWorker.ts', import.meta.url), { type: 'module' })
+    searchWorker.onmessage = (e: MessageEvent) => {
+      const { id, matches } = e.data as { id: number; matches: number[] }
+      if (id !== searchSeq) return
+      searchMatches.value = new Set(matches)
+      searching.value = false
+    }
+    searchWorker.onerror = () => {
+      searchWorker = null
+      searching.value = false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+watch(searchApplied, (v) => {
+  const seq = ++searchSeq
+  searchCursor.value = 0
+  const rows = props.rows
+  if (!v.trim()) {
+    searchMatches.value = new Set()
+    searching.value = false
+    return
+  }
+  if (ensureSearchWorker() && searchWorker) {
+    searching.value = true
+    searchWorker.postMessage({ id: seq, rows, keyword: v })
+    // Worker 不可用(被 onerror 清空)时回退主线程
+    if (!searchWorker) searchMatches.value = scanInPlace(rows, v)
+  } else {
+    searchMatches.value = scanInPlace(rows, v)
+  }
 })
-/** 命中行升序 + 当前定位游标 */
-const searchList = computed(() => [...searchMatches.value].sort((a, b) => a - b))
-const searchCursor = ref(0)
 
 function scrollToRow(r: number) {
   const el = scroller.value
@@ -694,7 +741,7 @@ defineExpose({
         @keydown.enter.prevent="stepSearch($event.shiftKey ? -1 : 1)"
         @keydown.esc="() => { searchText = ''; showSearch = false }"
       />
-      <span class="search-count">{{ searchList.length ? `${searchCursor + 1}/${searchList.length}` : 0 }} 行命中</span>
+      <span class="search-count">{{ searching ? '搜索中…' : (searchList.length ? `${searchCursor + 1}/${searchList.length} 行命中` : '无命中') }}</span>
       <button class="search-close" @click="() => { searchText = ''; showSearch = false }">×</button>
     </div>
     <div
