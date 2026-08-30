@@ -126,8 +126,9 @@ pub async fn list_databases(backend: &mut Backend, info: &ConnInfo) -> Result<Ve
                 .map_err(es)?;
             Ok(out)
         }
-        Backend::Pg(client) => {
+        Backend::Pg(mp) => {
             use tokio_postgres::SimpleQueryMessage;
+            let client = Backend::pg_client(mp).await?;
             let messages = client
                 .simple_query("SELECT datname FROM pg_database WHERE datallowconn ORDER BY datname")
                 .await
@@ -588,7 +589,10 @@ impl Backend {
                     .ok_or_else(|| "未指定数据库".to_string())?;
                 schema_mysql(&mut conn, db).await
             }
-            Backend::Pg(client) => schema_pg(client).await,
+            Backend::Pg(mp) => {
+                let client = Backend::pg_client(mp).await?;
+                schema_pg(&client).await
+            }
             Backend::Redis(_) => crate::redis_ops::databases(self).await.map(|dbs| {
                 dbs.into_iter()
                     .map(|(idx, keys)| TableMeta {
@@ -642,7 +646,10 @@ async fn resolve_mysql_db(
                 let db = Self::resolve_mysql_db(&mut conn, info, None).await?;
                 struct_mysql(&mut conn, &db, table).await
             }
-            Backend::Pg(client) => struct_pg(client, table).await,
+            Backend::Pg(mp) => {
+                let client = Backend::pg_client(mp).await?;
+                struct_pg(&client, table).await
+            }
             Backend::Redis(_) => Err("Redis 无表结构".into()),
         }
     }
@@ -654,7 +661,10 @@ async fn resolve_mysql_db(
                 let mut conn = Backend::mysql_conn(mp).await?;
                 count_mysql(&mut conn, table).await
             }
-            Backend::Pg(client) => count_pg(client, table).await,
+            Backend::Pg(mp) => {
+                let client = Backend::pg_client(mp).await?;
+                count_pg(&client, table).await
+            }
             Backend::Redis(_) => Err("Redis 无表计数".into()),
         }
     }
@@ -667,7 +677,10 @@ async fn resolve_mysql_db(
                 let db = Self::resolve_mysql_db(&mut conn, info, None).await?;
                 fk_mysql(&mut conn, &db).await
             }
-            Backend::Pg(client) => fk_pg(client).await,
+            Backend::Pg(mp) => {
+                let client = Backend::pg_client(mp).await?;
+                fk_pg(&client).await
+            }
             Backend::Redis(_) => Ok(vec![]),
         }
     }

@@ -48,10 +48,10 @@ async fn connect(state: State<'_, AppState>, info: ConnInfo) -> Result<ConnectRe
     let mut backend = backend::connect(&info).await?;
     // 重复连接同一 id(如改配置重连)时保留会话库记忆
     let prev = match state.inner().get(&info.id) {
-        Some(old) => old.lock().await.backend.mysql_session_db().map(str::to_string),
+        Some(old) => old.lock().await.backend.session_db().map(str::to_string),
         None => None,
     };
-    backend.mysql_set_session_db(prev.as_deref());
+    backend.set_session_db(prev.as_deref());
     let version = backend.server_info().await?;
     state.insert(LiveConn { info, backend });
     Ok(ConnectResult { version })
@@ -531,11 +531,11 @@ async fn run_sql(
             }
             // 连接已整体失效(池不可用/网络中断):重建后端并恢复会话库后重试
             let info = guard.info.clone();
-            let session_db = guard.backend.mysql_session_db().map(str::to_string);
+            let session_db = guard.backend.session_db().map(str::to_string);
             let mut nb = backend::connect(&info).await.map_err(|e2| {
                 format!("连接已断开,自动重连失败: {e2}(原错误: {e})")
             })?;
-            nb.mysql_set_session_db(session_db.as_deref());
+            nb.set_session_db(session_db.as_deref());
             let r = nb.run_sql(&sql, max_rows).await.map_err(|e2| {
                 format!("{e2}(已自动重连)")
             })?;

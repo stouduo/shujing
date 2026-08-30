@@ -337,7 +337,18 @@ impl Backend {
                 }
                 r
             }
-            Backend::Pg(client) => run_pg(client, sql, max).await,
+            Backend::Pg(mp) => {
+                let client = Backend::pg_client(mp).await?;
+                let r = run_pg(&client, sql, max).await;
+                if r.is_ok() {
+                    // SET search_path 语句更新会话上下文,后续取连接恢复
+                    if let Some(db) = crate::model::extract_use_db(sql) {
+                        mp.session_db = Some(db);
+                        mp.applied.iter_mut().for_each(|a| *a = None);
+                    }
+                }
+                r
+            }
             Backend::Redis(_) => Err("Redis 请使用专门的命令通道".into()),
         }
     }

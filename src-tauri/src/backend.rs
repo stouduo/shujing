@@ -1,4 +1,5 @@
-use crate::model::{es, Backend, ConnInfo, DbType};
+use crate::model::{es, Backend, ConnInfo, DbType, PgPool};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 fn req<'a>(v: &'a Option<String>, msg: &str) -> Result<&'a str, String> {
@@ -86,18 +87,38 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
                 pg_quote(pass),
                 pg_quote(db)
             );
-            let (client, connection) = tokio_postgres::connect(&cfg, tokio_postgres::NoTls)
-                .await
-                .map_err(|e| format!("连接 PostgreSQL 失败: {e}"))?;
-            // 后台驱动连接任务,断开时打日志即可
-            tokio::spawn(async move {
-                if let Err(e) = connection.await {
-                    eprintln!("[postgres] 连接中断: {e}");
+            // 多会话池:PG 单会话内查询串行,3 条会话轮发实现真并发
+            let mut clients = Vec::new();
+            let mut last_err: Option<tokio_postgres::Error> = None;
+            for _ in 0..3 {
+                match tokio_postgres::connect(&cfg, tokio_postgres::NoTls).await {
+                    Ok((c, conn)) => {
+                        tokio::spawn(async move {
+                            if let Err(e) = conn.await {
+                                eprintln!("[postgres] 连接中断: {e}");
+                            }
+                        });
+                        clients.push(std::sync::Arc::new(c));
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                        break;
+                    }
                 }
-            });
-            Ok(Backend::Pg(client))
-        }
-    }
+            }
+            if clients.is_empty() {
+                return Err(format!(
+                    "连接 PostgreSQL 失败: {}",
+                    last_err.map(|e| e.to_string()).unwrap_or_default()
+                ));
+            }
+            Ok(Backend::Pg(PgPool {
+                clients,
+                next: std::sync::atomic::AtomicUsize::new(0),
+                session_db: None,
+                applied: vec![None; 3],
+            }))
+        }    }
 }
 
 impl Backend {
@@ -119,16 +140,50 @@ impl Backend {
         Ok(conn)
     }
 
-    pub fn mysql_session_db(&self) -> Option<&str> {
+    /// PostgreSQL:轮发取一个会话,按需恢复 search_path
+    pub(crate) async fn pg_client(
+        mp: &mut crate::model::PgPool,
+    ) -> Result<std::sync::Arc<tokio_postgres::Client>, String> {
+        if mp.clients.is_empty() {
+            return Err("PostgreSQL 连接池为空".into());
+        }
+        let n = mp.next.fetch_add(1, Ordering::Relaxed) % mp.clients.len();
+        let client = mp.clients[n].clone();
+        let want = mp.session_db.clone();
+        if want.is_some() && mp.applied.get(n).map(|a| a.as_deref()) != Some(want.as_deref()) {
+            let stmt = format!(
+                "SET search_path TO \"{}\"",
+                want.clone().unwrap_or_default().replace('"', "\"\"")
+            );
+            client
+                .simple_query(&stmt)
+                .await
+                .map_err(|e| format!("恢复 search_path 失败: {e}"))?;
+            if let Some(a) = mp.applied.get_mut(n) {
+                *a = want;
+            }
+        }
+        Ok(client)
+    }
+
+    /// 会话库上下文读取(MySQL/PG)
+    pub fn session_db(&self) -> Option<&str> {
         match self {
             Backend::MySql(mp) => mp.session_db.as_deref(),
+            Backend::Pg(p) => p.session_db.as_deref(),
             _ => None,
         }
     }
 
-    pub fn mysql_set_session_db(&mut self, db: Option<&str>) {
-        if let Backend::MySql(mp) = self {
-            mp.session_db = db.map(str::to_string);
+    pub fn set_session_db(&mut self, db: Option<&str>) {
+        match self {
+            Backend::MySql(mp) => mp.session_db = db.map(str::to_string),
+            Backend::Pg(p) => {
+                p.session_db = db.map(str::to_string);
+                // 上下文变化:所有槽位重新应用
+                p.applied.iter_mut().for_each(|a| *a = None);
+            }
+            _ => {}
         }
     }
 
@@ -171,7 +226,8 @@ impl Backend {
                     .unwrap_or_else(|| "Redis".into());
                 Ok(format!("Redis {ver}"))
             }
-            Backend::Pg(client) => {
+            Backend::Pg(mp) => {
+                let client = mp.clients.first().cloned().ok_or("PostgreSQL 连接池为空")?;
                 let rows = client.simple_query("SELECT version()").await.map_err(es)?;
                 for msg in rows {
                     if let tokio_postgres::SimpleQueryMessage::Row(row) = msg {

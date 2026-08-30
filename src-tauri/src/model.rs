@@ -111,8 +111,17 @@ pub struct ConnectResult {
 pub enum Backend {
     Sqlite(rusqlite::Connection),
     MySql(MySqlPool),
-    Pg(tokio_postgres::Client),
+    Pg(PgPool),
     Redis(redis::Client),
+}
+
+/// PostgreSQL 连接池:多条会话轮发,单会话内的串行不再阻塞其他标签页
+pub struct PgPool {
+    pub(crate) clients: Vec<std::sync::Arc<tokio_postgres::Client>>,
+    pub(crate) next: std::sync::atomic::AtomicUsize,
+    pub(crate) session_db: Option<String>,
+    /// 每个槽位已应用的 search_path(与 clients 一一对应)
+    pub(crate) applied: Vec<Option<String>>,
 }
 
 /// MySQL 连接池 + 会话库上下文(每次取连接自动 USE 恢复)
