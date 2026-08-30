@@ -280,54 +280,40 @@ const visible = computed(() => props.rows.slice(start.value, end.value))
 
 // ── 列虚拟滚动:只渲染可视区内的列(钉住列常驻) ──────
 const scrollLeftX = ref(0)
-const COL_OVERSCAN = 1
 
 /** 非 pinned 列序列(列索引) */
 const flowCols = computed(() => colOrder.value.filter((i) => !pinned.value.includes(props.columns[i])))
 
-/** 各列相对内容区(fixedBase 之后)的起始偏移 */
-const colOffsets = computed(() => {
+/** 可视列窗口:返回应渲染的非钉住列索引 */
+/** 每列的绝对 X 坐标(含 ☑/# 前置宽度) */
+const colX = computed(() => {
   const arr: number[] = []
-  let x = 0
-  for (const i of flowCols.value) {
-    arr.push(x)
+  let x = fixedBase.value
+  for (const i of colOrder.value) {
+    arr[i] = x
     x += widths.value[i]
   }
   return arr
 })
 
-/** 可视列窗口:返回应渲染的非钉住列索引 */
-const visibleFlowCols = computed(() => {
-  const n = flowCols.value.length
-  if (!n) return []
-  const viewport = scroller.value?.clientWidth ?? 1200
-  const from = Math.max(0, scrollLeftX.value - 0)
-  const lo = binarySearchOffset(colOffsets.value, from)
-  const hi = binarySearchOffset(colOffsets.value, from + viewport)
-  const s = Math.max(0, lo - COL_OVERSCAN)
-  const e = Math.min(n, hi + 1 + COL_OVERSCAN)
-  const out: number[] = []
-  for (let k = s; k < e; k++) out.push(flowCols.value[k])
-  return out
-})
-
-/** 首个可视列之前的空白宽度 */
-const colLeftPad = computed(() => {
+/** 窗口首列之前的空白(被滚出窗口的前缀列宽) */
+const colPadW = computed(() => {
   const win = visibleFlowCols.value
   if (!win.length) return 0
-  return colOffsets.value[flowCols.value.indexOf(win[0])] ?? 0
+  return (colX.value[win[0]] ?? 0) - fixedBase.value
 })
 
-function binarySearchOffset(offsets: number[], target: number): number {
-  let lo = 0
-  let hi = offsets.length
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1
-    if (offsets[mid] < target) lo = mid + 1
-    else hi = mid
+const visibleFlowCols = computed(() => {
+  const vw = scroller.value?.clientWidth ?? 1200
+  const viewL = scrollLeftX.value - vw
+  const viewR = scrollLeftX.value + vw * 2
+  const out: number[] = []
+  for (const i of flowCols.value) {
+    const x = colX.value[i]
+    if (x < viewR && x + widths.value[i] > viewL) out.push(i)
   }
-  return lo
-}
+  return out
+})
 function onScroll() {
   commitEdit()
   scrollLeftX.value = scroller.value?.scrollLeft ?? 0
@@ -815,8 +801,8 @@ defineExpose({
               @change="emit('check-page', ($event.target as HTMLInputElement).checked)"
             />
           </div>
-          <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: (editable ? W_CHK : 0) + 'px' }">#</div>
-          <div class="cell head-cell col-pad" :style="{ width: colLeftPad + 'px' }" />
+          <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }">#</div>
+          <div class="cell col-pad" :style="{ width: colPadW + 'px' }" />
           <div
             v-for="i in visibleFlowCols"
             :key="'f' + i"
@@ -853,7 +839,7 @@ defineExpose({
           >
             −
           </div>
-          <div class="cell col-pad" :style="{ width: colLeftPad + 'px' }" />
+          <div class="cell col-pad" :style="{ width: colPadW + 'px' }" />
           <div
             v-for="ci in visibleFlowCols"
             :key="'n' + ci"
@@ -904,11 +890,11 @@ defineExpose({
           <div
             v-if="showNum"
             class="cell rownum fixed-num"
-            :style="{ width: W_NUM + 'px', left: (editable ? W_CHK : 0) + 'px' }"
+            :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }"
           >
             {{ start + ri + 1 }}
           </div>
-          <div class="cell col-pad" :style="{ width: colLeftPad + 'px' }" />
+          <div class="cell col-pad" :style="{ width: colPadW + 'px' }" />
           <div
             v-for="ci in visibleFlowCols"
             :key="'d' + ci"
@@ -1085,7 +1071,7 @@ defineExpose({
 }
 .row {
   display: flex;
-  /* 行宽随内容伸展,zebra 背景铺满可视区;contain 不能用 paint(会裁掉滚动出界的单元格) */
+  /* 行宽随内容伸展;列渲染窗口带大缓冲,滚动时极少重排 */
   width: max-content;
   min-width: 100%;
   contain: layout style;
@@ -1120,7 +1106,6 @@ defineExpose({
 }
 .cell.col-pad {
   border-right: none;
-  background: var(--bg-grid, transparent);
 }
 .row.search-hit {
   background: rgba(255, 213, 74, 0.06) !important;
