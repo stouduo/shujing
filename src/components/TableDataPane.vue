@@ -65,14 +65,15 @@ onMounted(() => {
   window.addEventListener('result-search', () => gridRef.value?.openSearch())
 })
 
-// 行高:紧凑/舒适
+// 行高:紧凑/舒适(按表记忆)
+const rowhKey = computed(() => `dblens_rowh:${props.tab.connId ?? ''}/${props.tab.table}`)
 const rowHeight = ref<'compact' | 'cozy'>(
-  localStorage.getItem('dblens_rowh') === 'compact' ? 'compact' : 'cozy',
+  localStorage.getItem(rowhKey.value) === 'compact' ? 'compact' : 'cozy',
 )
 
 function toggleRowHeight() {
   rowHeight.value = rowHeight.value === 'cozy' ? 'compact' : 'cozy'
-  localStorage.setItem('dblens_rowh', rowHeight.value)
+  localStorage.setItem(rowhKey.value, rowHeight.value)
 }
 
 const checkedN = computed(() => Object.keys(props.tab.checkedRows).length)

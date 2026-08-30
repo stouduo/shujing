@@ -91,6 +91,14 @@ async function exportXlsx() {
   for (const r of props.result.rows) {
     sheet.addRow(r.map((v) => (v === null ? null : /^\d+(\.\d+)?$/.test(v) ? Number(v) : v)))
   }
+  // 表头加粗 + 列宽按内容自适应(采样前 300 行)
+  sheet.getRow(1).font = { bold: true }
+  sheet.getRow(1).height = 20
+  props.result.columns.forEach((c, i) => {
+    const sample = props.result.rows.slice(0, 300).map((r) => (r[i] ?? '').length)
+    const maxLen = Math.max(c.length, ...(sample.length ? sample : [6]))
+    sheet.getColumn(i + 1).width = Math.min(60, Math.max(10, maxLen + 2))
+  })
   const buf = await wb.xlsx.writeBuffer()
   const u8 = new Uint8Array(buf)
   if (!isTauri) {

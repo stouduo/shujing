@@ -181,6 +181,27 @@ function closeLeft(id: string) {
   if (!store.tabs.some((t) => t.id === store.activeTabId)) store.activeTabId = id
 }
 
+// ── 标签拖拽排序 ──────────────────────────────────────
+const dragTabId = ref('')
+function onTabDragStart(e: DragEvent, id: string) {
+  dragTabId.value = id
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+}
+function onTabDrop(e: DragEvent, targetId: string) {
+  e.preventDefault()
+  const src = dragTabId.value
+  if (!src || src === targetId) return
+  const from = store.tabs.findIndex((t) => t.id === src)
+  const to = store.tabs.findIndex((t) => t.id === targetId)
+  if (from < 0 || to < 0 || from === to) return
+  const [moved] = store.tabs.splice(from, 1)
+  store.tabs.splice(to, 0, moved)
+  dragTabId.value = ''
+}
+
 function openImport(connId: string) {
   importConnId.value = connId
   showImport.value = true
@@ -451,8 +472,12 @@ function openEdit(info: ConnInfo) {
                   role="tab"
                   :aria-selected="t.id === store.activeTabId"
                   :title="t.title"
+                  draggable="true"
                   @click="store.activeTabId = t.id"
                   @mousedown.middle.prevent="store.closeTab(t.id)"
+                  @dragstart="onTabDragStart($event, t.id)"
+                  @dragover.prevent
+                  @drop="onTabDrop($event, t.id)"
                 >
                   <Icon :name="tabIconOf(t.kind)" :size="12" class="tab-icon" />
                   <input
