@@ -459,6 +459,16 @@ function run(selectedSql?: string) {
   runWithParams()
 }
 
+async function cancelRun() {
+  if (!props.tab.connId) return
+  try {
+    await api.cancelQuery(props.tab.connId)
+    message.info('已发送取消指令')
+  } catch (e) {
+    message.error(String(e))
+  }
+}
+
 async function beautify() {
   if (!props.tab.sql.trim()) {
     message.warning('没有可格式化的 SQL')
@@ -541,8 +551,24 @@ async function applyHistory(key: string | number) {
 <template>
   <div class="pane-root">
     <div class="toolbar" data-tauri-drag-region>
-      <n-button size="small" type="primary" :loading="tab.running" class="run-btn" @click="run()">
+      <n-button
+        v-if="!tab.running"
+        size="small"
+        type="primary"
+        class="run-btn"
+        @click="run()"
+      >
         <Icon name="play" :size="12" /> 运行
+      </n-button>
+      <n-button
+        v-else
+        size="small"
+        type="error"
+        class="run-btn"
+        title="终止当前查询"
+        @click="cancelRun"
+      >
+        <Icon name="x" :size="12" /> 取消
       </n-button>
       <n-select
         v-model:value="tab.connId"

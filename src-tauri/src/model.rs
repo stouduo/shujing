@@ -122,12 +122,16 @@ pub struct PgPool {
     pub(crate) session_db: Option<String>,
     /// 每个槽位已应用的 search_path(与 clients 一一对应)
     pub(crate) applied: Vec<Option<String>>,
+    /// 最近 checkout 会话的 backend pid(取消用)
+    pub(crate) running_pid: std::sync::Arc<std::sync::atomic::AtomicU32>,
 }
 
 /// MySQL 连接池 + 会话库上下文(每次取连接自动 USE 恢复)
 pub struct MySqlPool {
     pub(crate) pool: mysql_async::Pool,
     pub(crate) session_db: Option<String>,
+    /// 最近一次取用连接的会话 ID(KILL QUERY 用)
+    pub(crate) running_id: std::sync::atomic::AtomicU64,
 }
 
 /// 从 USE / SET search_path 语句提取库名
@@ -167,25 +171,74 @@ pub struct LiveConn {
     pub backend: Backend,
 }
 
+/// 取消查询所需的目标信息(独立于执行锁:正在跑的查询不会阻塞取消)
+pub struct CancelState {
+    pub db_type: DbType,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+    pub database: Option<String>,
+    /// MySQL 当前会话 ID(KILL QUERY 用)
+    pub mysql_id: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// PG 当前会话的 backend pid
+    pub pg_pid: std::sync::Arc<std::sync::atomic::AtomicU32>,
+}
+
+impl CancelState {
+    pub fn new(info: &ConnInfo, pg_pid: std::sync::Arc<std::sync::atomic::AtomicU32>) -> Self {
+        Self {
+            db_type: info.db_type,
+            host: info.host.clone(),
+            port: info.port,
+            user: info.user.clone(),
+            password: info.password.clone(),
+            database: info.database.clone(),
+            mysql_id: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            pg_pid,
+        }
+    }
+}
+
+/// 单个连接条目:执行与取消通道分离(运行中的查询只持有 live 锁)
+pub struct ConnEntry {
+    pub live: std::sync::Arc<tokio::sync::Mutex<LiveConn>>,
+    pub cancel: std::sync::Arc<CancelState>,
+}
+
 #[derive(Default)]
 pub struct AppState {
-    conns: Mutex<HashMap<String, Arc<tokio::sync::Mutex<LiveConn>>>>,
+    conns: Mutex<HashMap<String, Arc<ConnEntry>>>,
 }
 
 impl AppState {
-    pub fn insert(&self, conn: LiveConn) {
-        self.conns
-            .lock()
-            .unwrap()
-            .insert(conn.info.id.clone(), Arc::new(tokio::sync::Mutex::new(conn)));
+    pub fn insert(&self, live: LiveConn, cancel: std::sync::Arc<CancelState>) {
+        let id = live.info.id.clone();
+        self.conns.lock().unwrap().insert(
+            id,
+            Arc::new(ConnEntry {
+                live: std::sync::Arc::new(tokio::sync::Mutex::new(live)),
+                cancel,
+            }),
+        );
     }
 
-    pub fn remove(&self, id: &str) -> Option<Arc<tokio::sync::Mutex<LiveConn>>> {
+    pub fn remove(&self, id: &str) -> Option<Arc<ConnEntry>> {
         self.conns.lock().unwrap().remove(id)
     }
 
-    pub fn get(&self, id: &str) -> Option<Arc<tokio::sync::Mutex<LiveConn>>> {
-        self.conns.lock().unwrap().get(id).cloned()
+    /// 执行用的连接锁
+    pub fn live(&self, id: &str) -> Option<Arc<tokio::sync::Mutex<LiveConn>>> {
+        self.conns.lock().unwrap().get(id).map(|e| e.live.clone())
+    }
+
+    /// 取消通道(轻锁,运行中查询也不阻塞读取)
+    pub fn cancel(&self, id: &str) -> Option<Arc<CancelState>> {
+        self.conns.lock().unwrap().get(id).map(|e| e.cancel.clone())
+    }
+
+    pub fn get(&self, id: &str) -> Option<std::sync::Arc<tokio::sync::Mutex<LiveConn>>> {
+        self.conns.lock().unwrap().get(id).map(|e| e.live.clone())
     }
 }
 

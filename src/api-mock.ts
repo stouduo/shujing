@@ -531,6 +531,9 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       if (!t) throw new Error(`表 ${args?.table} 不存在`)
       return structureOf(t) as T
     }
+    case 'cancel_query':
+      // 预览模式查询即时返回,无需取消
+      return undefined as T
     case 'run_sql': {
       const sql = String(args?.sql ?? '')
       const maxRows = Number(args?.maxRows ?? 1000)

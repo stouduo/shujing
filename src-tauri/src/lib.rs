@@ -38,22 +38,26 @@ async fn delete_connection(app: AppHandle, state: State<'_, AppState>, id: Strin
 
 #[tauri::command]
 async fn test_connection(info: ConnInfo) -> Result<ConnectResult, String> {
-    let mut backend = backend::connect(&info).await?;
+    let mut backend = backend::connect(&info, None).await?;
     let version = backend.server_info().await?;
     Ok(ConnectResult { version })
 }
 
 #[tauri::command]
 async fn connect(state: State<'_, AppState>, info: ConnInfo) -> Result<ConnectResult, String> {
-    let mut backend = backend::connect(&info).await?;
+    let cancel = std::sync::Arc::new(crate::model::CancelState::new(
+        &info,
+        std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+    ));
+    let mut backend = backend::connect(&info, Some(cancel.pg_pid.clone())).await?;
     // 重复连接同一 id(如改配置重连)时保留会话库记忆
-    let prev = match state.inner().get(&info.id) {
+    let prev = match state.inner().live(&info.id) {
         Some(old) => old.lock().await.backend.session_db().map(str::to_string),
         None => None,
     };
     backend.set_session_db(prev.as_deref());
     let version = backend.server_info().await?;
-    state.insert(LiveConn { info, backend });
+    state.insert(LiveConn { info, backend }, cancel);
     Ok(ConnectResult { version })
 }
 
@@ -67,7 +71,7 @@ async fn disconnect(state: State<'_, AppState>, id: String) -> Result<(), String
 /// 列出服务器上所有数据库
 #[tauri::command]
 async fn list_databases(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     schema::list_databases(&mut guard.backend, &info).await
@@ -80,7 +84,7 @@ async fn list_tables(
     id: String,
     database: Option<String>,
 ) -> Result<Vec<schema::TableMeta>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     guard.backend.list_tables_in(&info, database.as_deref().or(info.database.as_deref())).await
@@ -88,7 +92,7 @@ async fn list_tables(
 
 #[tauri::command]
 async fn list_tables_legacy(state: State<'_, AppState>, id: String) -> Result<Vec<TableMeta>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     guard.backend.list_tables(&info).await
@@ -100,7 +104,7 @@ async fn get_table_structure(
     id: String,
     table: String,
 ) -> Result<TableStructure, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     guard.backend.get_table_structure(&info, &table).await
@@ -108,7 +112,7 @@ async fn get_table_structure(
 
 #[tauri::command]
 async fn count_rows(state: State<'_, AppState>, id: String, table: String) -> Result<u64, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     guard.backend.count_rows(&table).await
 }
@@ -118,7 +122,7 @@ async fn list_foreign_keys(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<Vec<schema::FkMeta>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     guard.backend.list_foreign_keys(&info).await
@@ -234,7 +238,7 @@ async fn export_table_sql(
     table: String,
     with_data: Option<bool>,
 ) -> Result<DumpResult, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     let (sql, rows) =
@@ -249,7 +253,7 @@ async fn export_database_sql(
     id: String,
     with_data: Option<bool>,
 ) -> Result<DumpResult, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     let tables = guard.backend.list_tables(&info).await?;
@@ -272,7 +276,7 @@ async fn export_database_sql(
 // ── Redis 专用命令 ────────────────────────────────────
 #[tauri::command]
 async fn redis_databases(state: State<'_, AppState>, id: String) -> Result<Vec<(u8, u64)>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     redis_ops::databases(&mut guard.backend).await
 }
@@ -286,7 +290,7 @@ async fn redis_scan(
     cursor: u64,
     count: Option<usize>,
 ) -> Result<(u64, Vec<String>), String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     redis_ops::scan_keys(&mut guard.backend, db, &pattern, cursor, count.unwrap_or(200)).await
 }
@@ -298,7 +302,7 @@ async fn redis_key_detail(
     db: u8,
     key: String,
 ) -> Result<redis_ops::RedisDetail, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     redis_ops::key_detail(&mut guard.backend, db, &key).await
 }
@@ -310,14 +314,14 @@ async fn redis_key_types(
     db: u8,
     keys: Vec<String>,
 ) -> Result<Vec<String>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     redis_ops::key_types(&mut guard.backend, db, &keys).await
 }
 
 #[tauri::command]
 async fn redis_del(state: State<'_, AppState>, id: String, db: u8, key: String) -> Result<u64, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     if info.read_only {
@@ -334,7 +338,7 @@ async fn redis_set(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     if info.read_only {
@@ -345,7 +349,7 @@ async fn redis_set(
 
 #[tauri::command]
 async fn redis_set_ttl(state: State<'_, AppState>, id: String, db: u8, key: String, seconds: i64) -> Result<(), String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     if guard.info.read_only { return Err("只读连接不允许修改 TTL".into()); }
     redis_ops::set_ttl(&mut guard.backend, db, &key, seconds).await
@@ -353,7 +357,7 @@ async fn redis_set_ttl(state: State<'_, AppState>, id: String, db: u8, key: Stri
 
 #[tauri::command]
 async fn redis_rename(state: State<'_, AppState>, id: String, db: u8, key: String, new_key: String) -> Result<(), String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     if guard.info.read_only { return Err("只读连接不允许重命名".into()); }
     redis_ops::rename(&mut guard.backend, db, &key, &new_key).await
@@ -361,7 +365,7 @@ async fn redis_rename(state: State<'_, AppState>, id: String, db: u8, key: Strin
 
 #[tauri::command]
 async fn redis_ttl_batch(state: State<'_, AppState>, id: String, db: u8, keys: Vec<String>) -> Result<Vec<i64>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     redis_ops::ttl_batch(&mut guard.backend, db, &keys).await
 }
@@ -376,7 +380,7 @@ async fn redis_new_key(
     text: String,
     pairs: Vec<(String, String)>,
 ) -> Result<(), String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     if guard.info.read_only { return Err("只读连接不允许新建".into()); }
     redis_ops::new_key(&mut guard.backend, db, &key, &key_type, &text, &pairs).await
@@ -393,7 +397,7 @@ async fn redis_member_op(
     member: String,
     extra: String,
 ) -> Result<(), String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     if guard.info.read_only { return Err("只读连接不允许修改".into()); }
     redis_ops::member_op(&mut guard.backend, db, &key, &key_type, &op, &member, &extra).await
@@ -407,7 +411,7 @@ async fn redis_analyze(
     sample: Option<usize>,
     mode: String,
 ) -> Result<Vec<redis_ops::KeyStat>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     redis_ops::analyze(&mut guard.backend, db, sample.unwrap_or(1000).min(20000), &mode).await
 }
@@ -418,7 +422,7 @@ async fn redis_run(
     id: String,
     command: String,
 ) -> Result<Vec<String>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     redis_ops::run_command(&mut guard.backend, &info, &command).await
@@ -432,7 +436,7 @@ async fn search_all_tables(
     keyword: String,
     max_hits: Option<usize>,
 ) -> Result<Vec<search::SearchHit>, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     search::search_tables(&mut guard.backend, &info, &keyword, max_hits.unwrap_or(50)).await
@@ -445,7 +449,7 @@ async fn get_object_ddl(
     kind: String,
     name: String,
 ) -> Result<String, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     schema::object_ddl(&mut guard.backend, &info, &kind, &name).await
@@ -460,7 +464,7 @@ async fn apply_changes(
     deletes: Vec<Vec<(String, String)>>,
     inserts: Vec<Vec<(String, String)>>,
 ) -> Result<model::ExecResult, String> {
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
     edits::apply_changes(&mut guard.backend, &info, &table, &updates, &deletes, &inserts).await
@@ -517,13 +521,18 @@ async fn run_sql(
     if sql.is_empty() {
         return Err("SQL 为空".into());
     }
-    let live = state.inner().get(&id).ok_or("连接未建立或已断开")?;
+    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
+    let cancel_state = state.inner().cancel(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     if guard.info.read_only && !model::is_readonly_sql(&sql) {
         return Err("只读连接:仅允许 SELECT/WITH/EXPLAIN/SHOW/DESCRIBE/PRAGMA".into());
     }
     let max_rows = max_rows.unwrap_or(exec::DEFAULT_MAX_ROWS);
-    match guard.backend.run_sql(&sql, max_rows).await {
+    match guard
+        .backend
+        .run_sql(&sql, max_rows, Some(&cancel_state.mysql_id))
+        .await
+    {
         Ok(r) => Ok(r),
         Err(e) => {
             if !is_dead_conn(&e) {
@@ -532,16 +541,80 @@ async fn run_sql(
             // 连接已整体失效(池不可用/网络中断):重建后端并恢复会话库后重试
             let info = guard.info.clone();
             let session_db = guard.backend.session_db().map(str::to_string);
-            let mut nb = backend::connect(&info).await.map_err(|e2| {
+            let mut nb = backend::connect(&info, None).await.map_err(|e2| {
                 format!("连接已断开,自动重连失败: {e2}(原错误: {e})")
             })?;
             nb.set_session_db(session_db.as_deref());
-            let r = nb.run_sql(&sql, max_rows).await.map_err(|e2| {
+            let r = nb
+                .run_sql(&sql, max_rows, Some(&cancel_state.mysql_id))
+                .await
+                .map_err(|e2| {
                 format!("{e2}(已自动重连)")
             })?;
             guard.backend = nb;
             Ok(r)
         }
+    }
+}
+
+/// 取消当前正在执行的查询(MySQL KILL QUERY / PG pg_cancel_backend)
+#[tauri::command]
+async fn cancel_query(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let entry = state.inner().cancel(&id).ok_or("连接未建立或已断开")?;
+    let db_type = entry.db_type;
+    let host = entry.host.clone();
+    let port = entry.port;
+    let user = entry.user.clone();
+    let password = entry.password.clone();
+    let database = entry.database.clone();
+    match db_type {
+        model::DbType::MySql => {
+            let cid = entry.mysql_id.load(std::sync::atomic::Ordering::Relaxed);
+            if cid == 0 {
+                return Err("没有正在运行的查询".into());
+            }
+            let opts = mysql_async::OptsBuilder::default()
+                .ip_or_hostname(host.as_deref().unwrap_or("127.0.0.1"))
+                .tcp_port(port.unwrap_or(3306))
+                .user(user.as_deref())
+                .pass(Some(password.as_deref().unwrap_or("")));
+            let mut conn = mysql_async::Conn::new(opts)
+                .await
+                .map_err(|e| format!("取消失败(控制连接): {e}"))?;
+            mysql_async::prelude::Queryable::query_drop(
+                &mut conn,
+                format!("KILL QUERY {cid}"),
+            )
+            .await
+            .map_err(|e| format!("取消失败: {e}"))?;
+            Ok(())
+        }
+        model::DbType::Postgres => {
+            let pid = entry.pg_pid.load(std::sync::atomic::Ordering::Relaxed);
+            if pid == 0 {
+                return Err("没有正在运行的查询".into());
+            }
+            let cfg = format!(
+                "host={} port={} user={} password={} dbname={} connect_timeout=8",
+                crate::backend::pg_quote(host.as_deref().unwrap_or("127.0.0.1")),
+                port.unwrap_or(5432),
+                crate::backend::pg_quote(user.as_deref().unwrap_or("postgres")),
+                crate::backend::pg_quote(password.as_deref().unwrap_or("")),
+                crate::backend::pg_quote(database.as_deref().unwrap_or("postgres"))
+            );
+            let (client, connection) = tokio_postgres::connect(&cfg, tokio_postgres::NoTls)
+                .await
+                .map_err(|e| format!("取消失败(控制连接): {e}"))?;
+            tokio::spawn(async move {
+                let _ = connection.await;
+            });
+            client
+                .simple_query(&format!("SELECT pg_cancel_backend({pid})"))
+                .await
+                .map_err(|e| format!("取消失败: {e}"))?;
+            Ok(())
+        }
+        _ => Err("该数据库类型不支持取消".into()),
     }
 }
 
@@ -581,13 +654,13 @@ mod tests {
     async fn sqlite_full_flow() {
         let path = tmp_db("flow");
         let info = sqlite_info(&path);
-        let mut b = backend::connect(&info).await.unwrap();
+        let mut b = backend::connect(&info, None).await.unwrap();
 
         // DDL + 批量插入
-        b.run_sql("CREATE TABLE t1 (id INTEGER PRIMARY KEY, name TEXT, age INT)", 100)
+        b.run_sql("CREATE TABLE t1 (id INTEGER PRIMARY KEY, name TEXT, age INT)", 100, None)
             .await
             .unwrap();
-        b.run_sql("CREATE INDEX idx_name ON t1(name)", 100).await.unwrap();
+        b.run_sql("CREATE INDEX idx_name ON t1(name)", 100, None).await.unwrap();
         let r = b.run_one(
             "INSERT INTO t1 (name, age) VALUES ('alice', 30), ('bob', 25), ('carol', NULL)",
             100,
@@ -657,7 +730,7 @@ mod tests {
         assert!(r.truncated);
 
         // 无主键更新应报错
-        b.run_sql("CREATE TABLE nopk (a TEXT)", 10).await.unwrap();
+        b.run_sql("CREATE TABLE nopk (a TEXT)", 10, None).await.unwrap();
         let bad = edits::apply_changes(
             &mut b,
             &info,
@@ -679,12 +752,13 @@ mod tests {
     async fn sqlite_multi_statement_fallback() {
         let path = tmp_db("multi");
         let info = sqlite_info(&path);
-        let mut b = backend::connect(&info).await.unwrap();
+        let mut b = backend::connect(&info, None).await.unwrap();
         // 多语句拆分逐条执行,聚合结果集
         let rs = b
             .run_sql(
                 "CREATE TABLE m (x INT);\nINSERT INTO m VALUES (1);\nINSERT INTO m VALUES (2);\nSELECT * FROM m;\nSELECT x + 1 AS nx FROM m WHERE x = 2;",
                 10,
+                None,
             )
             .await
             .unwrap();
@@ -695,7 +769,7 @@ mod tests {
 
         // 字符串里带分号不会被误拆
         let rs = b
-            .run_sql("SELECT 'a;b' AS s", 10)
+            .run_sql("SELECT 'a;b' AS s", 10, None)
             .await
             .unwrap();
         assert_eq!(rs.len(), 1);
@@ -708,11 +782,12 @@ mod tests {
     async fn sqlite_foreign_keys() {
         let path = tmp_db("fk");
         let info = sqlite_info(&path);
-        let mut b = backend::connect(&info).await.unwrap();
+        let mut b = backend::connect(&info, None).await.unwrap();
         b.run_sql(
             "CREATE TABLE a (id INTEGER PRIMARY KEY);\
              CREATE TABLE b (id INTEGER PRIMARY KEY, a_id INTEGER REFERENCES a(id));",
             10,
+            None,
         )
         .await
         .unwrap();
@@ -729,11 +804,12 @@ mod tests {
     async fn sqlite_trigger_and_ddl() {
         let path = tmp_db("trg");
         let info = sqlite_info(&path);
-        let mut b = backend::connect(&info).await.unwrap();
+        let mut b = backend::connect(&info, None).await.unwrap();
         b.run_sql(
             "CREATE TABLE t (id INTEGER PRIMARY KEY, n INT);\
              CREATE TRIGGER trg_t AFTER INSERT ON t BEGIN UPDATE t SET n = n + 1 WHERE id = NEW.id; END;",
             10,
+            None,
         )
         .await
         .unwrap();
@@ -752,8 +828,8 @@ mod tests {
     async fn sqlite_readonly_guard() {
         let path = tmp_db("ro");
         let mut info = sqlite_info(&path);
-        let mut b = backend::connect(&info).await.unwrap();
-        b.run_sql("CREATE TABLE r (x INT); INSERT INTO r VALUES (1);", 10).await.unwrap();
+        let mut b = backend::connect(&info, None).await.unwrap();
+        b.run_sql("CREATE TABLE r (x INT); INSERT INTO r VALUES (1);", 10, None).await.unwrap();
 
         // 只读模式下仅放行查询语句
         info.read_only = true;
@@ -777,10 +853,11 @@ mod tests {
     async fn sqlite_global_search() {
         let path = tmp_db("search");
         let info = sqlite_info(&path);
-        let mut b = backend::connect(&info).await.unwrap();
+        let mut b = backend::connect(&info, None).await.unwrap();
         b.run_sql(
             "CREATE TABLE s1 (id INTEGER PRIMARY KEY, name TEXT);             CREATE TABLE s2 (id INTEGER PRIMARY KEY, note TEXT);             INSERT INTO s1 (name) VALUES ('alpha'), ('Beta'), ('gamma');             INSERT INTO s2 (note) VALUES ('ALPHA note'), ('other');",
             20,
+            None,
         )
         .await
         .unwrap();
@@ -811,6 +888,7 @@ pub fn run() {
             test_connection,
             connect,
             disconnect,
+            cancel_query,
             list_tables,
             list_databases,
             get_table_structure,

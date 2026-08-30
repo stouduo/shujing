@@ -115,6 +115,9 @@ export const searchAllTables = (id: string, keyword: string, maxHits = 50) =>
 export const runSql = (id: string, sql: string, maxRows = 1000) =>
   call<ExecResult[]>('run_sql', { id, sql, maxRows })
 
+/** 取消该连接当前正在执行的查询 */
+export const cancelQuery = (id: string) => call<void>('cancel_query', { id })
+
 export const readTextFile = (path: string) => call<string>('read_text_file', { path })
 
 export const readBinaryFile = (path: string) => call<number[]>('read_binary_file', { path })

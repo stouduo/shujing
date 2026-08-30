@@ -321,7 +321,12 @@ async fn run_pg(client: &tokio_postgres::Client, sql: &str, max: usize) -> Resul
 }
 
 impl Backend {
-    pub async fn run_sql(&mut self, sql: &str, max: usize) -> Result<Vec<ExecResult>, String> {
+    pub async fn run_sql(
+        &mut self,
+        sql: &str,
+        max: usize,
+        running_id: Option<&std::sync::atomic::AtomicU64>,
+    ) -> Result<Vec<ExecResult>, String> {
         let max = max.clamp(1, HARD_MAX_ROWS);
         match self {
             // sqlite 驱动是同步的;本地文件查询通常很快,占用一个 runtime worker 可接受
@@ -329,7 +334,14 @@ impl Backend {
             Backend::MySql(mp) => {
                 // 统一走 mysql_conn:自动恢复会话库上下文
                 let mut conn = Backend::mysql_conn(mp).await?;
+                // 记录会话 ID 供取消(查询结束时清零)
+                if let Some(rid) = running_id {
+                    rid.store(conn.id() as u64, std::sync::atomic::Ordering::Relaxed);
+                }
                 let r = run_mysql(&mut conn, sql, max).await;
+                if let Some(rid) = running_id {
+                    rid.store(0, std::sync::atomic::Ordering::Relaxed);
+                }
                 if r.is_ok() {
                     if let Some(db) = crate::model::extract_use_db(sql) {
                         mp.session_db = Some(db);
@@ -355,7 +367,7 @@ impl Backend {
 
     /// 单结果便捷取用(编辑回写等只关心 affected)
     pub async fn run_one(&mut self, sql: &str, max: usize) -> Result<ExecResult, String> {
-        let mut results = self.run_sql(sql, max).await?;
+        let mut results = self.run_sql(sql, max, None).await?;
         if results.is_empty() {
             return Ok(ExecResult {
                 columns: vec![],

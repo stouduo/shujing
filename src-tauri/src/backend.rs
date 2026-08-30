@@ -7,11 +7,14 @@ fn req<'a>(v: &'a Option<String>, msg: &str) -> Result<&'a str, String> {
 }
 
 /// postgres 连接串里的值用单引号包裹,转义反斜杠和单引号
-fn pg_quote(v: &str) -> String {
+pub(crate) fn pg_quote(v: &str) -> String {
     format!("'{}'", v.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
-pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
+pub async fn connect(
+    info: &ConnInfo,
+    pg_pid: Option<std::sync::Arc<std::sync::atomic::AtomicU32>>,
+) -> Result<Backend, String> {
     match info.db_type {
         DbType::Sqlite => {
             let path = req(&info.file_path, "缺少 SQLite 数据库文件路径")?;
@@ -47,6 +50,7 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
             Ok(Backend::MySql(crate::model::MySqlPool {
                 pool,
                 session_db: None,
+                running_id: std::sync::atomic::AtomicU64::new(0),
             }))
         }
         DbType::Redis => {
@@ -117,6 +121,7 @@ pub async fn connect(info: &ConnInfo) -> Result<Backend, String> {
                 next: std::sync::atomic::AtomicUsize::new(0),
                 session_db: None,
                 applied: vec![None; 3],
+                running_pid: pg_pid.unwrap_or_else(|| std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0))),
             }))
         }    }
 }
@@ -128,6 +133,8 @@ impl Backend {
     ) -> Result<mysql_async::Conn, String> {
         use mysql_async::prelude::*;
         let mut conn = mp.pool.get_conn().await.map_err(es)?;
+        // 记录会话 ID(免往返,来自握手),供 KILL QUERY 取消使用
+        mp.running_id.store(conn.id() as u64, Ordering::Relaxed);
         if let Some(db) = mp.session_db.clone() {
             if conn
                 .query_drop(format!("USE `{}`", db.replace('`', "``")))

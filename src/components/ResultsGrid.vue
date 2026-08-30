@@ -277,8 +277,60 @@ function highlightCell(r: number, c: number): string {
 const vscroll = useVirtualScroll({ rowCount: computed(() => props.rows.length), rowHeight: ROW_H })
 const { scroller, start, end } = vscroll
 const visible = computed(() => props.rows.slice(start.value, end.value))
+
+// ── 列虚拟滚动:只渲染可视区内的列(钉住列常驻) ──────
+const scrollLeftX = ref(0)
+const COL_OVERSCAN = 1
+
+/** 非 pinned 列序列(列索引) */
+const flowCols = computed(() => colOrder.value.filter((i) => !pinned.value.includes(props.columns[i])))
+
+/** 各列相对内容区(fixedBase 之后)的起始偏移 */
+const colOffsets = computed(() => {
+  const arr: number[] = []
+  let x = 0
+  for (const i of flowCols.value) {
+    arr.push(x)
+    x += widths.value[i]
+  }
+  return arr
+})
+
+/** 可视列窗口:返回应渲染的非钉住列索引 */
+const visibleFlowCols = computed(() => {
+  const n = flowCols.value.length
+  if (!n) return []
+  const viewport = scroller.value?.clientWidth ?? 1200
+  const from = Math.max(0, scrollLeftX.value - 0)
+  const lo = binarySearchOffset(colOffsets.value, from)
+  const hi = binarySearchOffset(colOffsets.value, from + viewport)
+  const s = Math.max(0, lo - COL_OVERSCAN)
+  const e = Math.min(n, hi + 1 + COL_OVERSCAN)
+  const out: number[] = []
+  for (let k = s; k < e; k++) out.push(flowCols.value[k])
+  return out
+})
+
+/** 首个可视列之前的空白宽度 */
+const colLeftPad = computed(() => {
+  const win = visibleFlowCols.value
+  if (!win.length) return 0
+  return colOffsets.value[flowCols.value.indexOf(win[0])] ?? 0
+})
+
+function binarySearchOffset(offsets: number[], target: number): number {
+  let lo = 0
+  let hi = offsets.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (offsets[mid] < target) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
 function onScroll() {
   commitEdit()
+  scrollLeftX.value = scroller.value?.scrollLeft ?? 0
   vscroll.onScroll()
 }
 
@@ -334,7 +386,6 @@ const {
   hideRowNum: hideRowNumRef,
   widths,
   colOrder,
-  pinnedLeft,
   totalW,
   setWidth,
   togglePin,
@@ -765,15 +816,13 @@ defineExpose({
             />
           </div>
           <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: (editable ? W_CHK : 0) + 'px' }">#</div>
+          <div class="cell head-cell col-pad" :style="{ width: colLeftPad + 'px' }" />
           <div
-            v-for="i in colOrder"
-            :key="i"
+            v-for="i in visibleFlowCols"
+            :key="'f' + i"
             class="cell head-cell"
-            :class="{ sortable: sortable, pinned: pinned.includes(columns[i]) }"
-            :style="{
-              width: widths[i] + 'px',
-              left: pinned.includes(columns[i]) ? (pinnedLeft[columns[i]] ?? 0) + 'px' : undefined,
-            }"
+            :class="{ sortable: sortable }"
+            :style="{ width: widths[i] + 'px' }"
             :title="headTitle(columns[i])"
             @click="sortable && emit('sort', columns[i])"
             @contextmenu="openHeadCtx($event, columns[i])"
@@ -804,15 +853,12 @@ defineExpose({
           >
             −
           </div>
+          <div class="cell col-pad" :style="{ width: colLeftPad + 'px' }" />
           <div
-            v-for="ci in colOrder"
-            :key="ci"
+            v-for="ci in visibleFlowCols"
+            :key="'n' + ci"
             class="cell editable inserted-cell"
-            :class="{ pinned: pinned.includes(columns[ci]) }"
-            :style="{
-              width: widths[ci] + 'px',
-              left: pinned.includes(columns[ci]) ? (pinnedLeft[columns[ci]] ?? 0) + 'px' : undefined,
-            }"
+            :style="{ width: widths[ci] + 'px' }"
             title="点击输入新值"
             @click="startEditNew(ni, ci)"
           >
@@ -862,23 +908,20 @@ defineExpose({
           >
             {{ start + ri + 1 }}
           </div>
+          <div class="cell col-pad" :style="{ width: colLeftPad + 'px' }" />
           <div
-            v-for="ci in colOrder"
-            :key="ci"
+            v-for="ci in visibleFlowCols"
+            :key="'d' + ci"
             class="cell"
             :class="{
               num: isNum(displayValue(start + ri, ci)),
               edited: cellChanged(start + ri, ci),
               editable: editable && !rowDeleted(start + ri),
-              pinned: pinned.includes(columns[ci]),
               'nav-focus': navCell?.r === start + ri && navCell?.c === ci,
               sel: inSel(start + ri, ci),
               'sel-preview': selPreviewing(start + ri, ci),
             }"
-            :style="{
-              width: widths[ci] + 'px',
-              left: pinned.includes(columns[ci]) ? (pinnedLeft[columns[ci]] ?? 0) + 'px' : undefined,
-            }"
+            :style="{ width: widths[ci] + 'px' }"
             :title="cellChanged(start + ri, ci)
               ? `原值:${props.rows[start + ri]?.[ci] ?? 'NULL'}`
               : displayValue(start + ri, ci) ?? 'NULL'"
@@ -1074,6 +1117,10 @@ defineExpose({
   outline-offset: -2px;
   z-index: 4;
   background: rgba(10, 132, 255, 0.06);
+}
+.cell.col-pad {
+  border-right: none;
+  background: var(--bg-grid, transparent);
 }
 .row.search-hit {
   background: rgba(255, 213, 74, 0.06) !important;
