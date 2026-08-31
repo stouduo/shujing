@@ -347,7 +347,6 @@ function onFilterCol(col: string, op = '=') {
             @click="tab.filterMode = 'free'"
           >自由</button>
         </div>
-        <div class="f-spacer" />
         <template v-if="tab.filterMode === 'fields'">
           <n-button size="tiny" quaternary @click="store.addFilter(tab.id)">＋ 添加条件</n-button>
           <n-button v-if="tab.filters.length" size="tiny" quaternary @click="store.clearFilters(tab.id)">
