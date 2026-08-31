@@ -300,13 +300,13 @@ const colX = computed(() => {
 const colPadW = computed(() => {
   const win = visibleFlowCols.value
   if (!win.length) return 0
-  return (colX.value[win[0]] ?? 0) - fixedBase.value
+  return Math.max(0, (colX.value[win[0]] ?? 0) - fixedBase.value)
 })
 
 const visibleFlowCols = computed(() => {
   const vw = scroller.value?.clientWidth ?? 1200
-  const viewL = scrollLeftX.value - vw
-  const viewR = scrollLeftX.value + vw * 2
+  const viewL = scrollLeftX.value + fixedBase.value - 30
+  const viewR = scrollLeftX.value + vw + 30
   const out: number[] = []
   for (const i of flowCols.value) {
     const x = colX.value[i]
@@ -802,13 +802,13 @@ defineExpose({
             />
           </div>
           <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }">#</div>
-          <div class="cell col-pad" :style="{ width: colPadW + 'px' }" />
+          <div class="cell head-cell col-pad" :style="{ width: colPadW + 'px', left: W_CHK + W_NUM + 'px' }" />
           <div
             v-for="i in visibleFlowCols"
             :key="'f' + i"
             class="cell head-cell"
             :class="{ sortable: sortable }"
-            :style="{ width: widths[i] + 'px' }"
+            :style="{ width: widths[i] + 'px', left: colX[i] + 'px' }"
             :title="headTitle(columns[i])"
             @click="sortable && emit('sort', columns[i])"
             @contextmenu="openHeadCtx($event, columns[i])"
@@ -834,17 +834,17 @@ defineExpose({
             v-if="showNum"
             class="cell rownum fixed-num new-remove"
             title="移除该新行"
-            :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }"
+            :style="{ width: W_NUM + 'px', left: Math.max(W_CHK - scrollLeftX, 0) + 'px' }"
             @click="emit('remove-insert', ni)"
           >
             −
           </div>
-          <div class="cell col-pad" :style="{ width: colPadW + 'px' }" />
+          <div class="cell col-pad" :style="{ width: colPadW + 'px', left: W_CHK + W_NUM + 'px' }" />
           <div
             v-for="ci in visibleFlowCols"
             :key="'n' + ci"
             class="cell editable inserted-cell"
-            :style="{ width: widths[ci] + 'px' }"
+            :style="{ width: widths[ci] + 'px', left: colX[ci] + 'px' }"
             title="点击输入新值"
             @click="startEditNew(ni, ci)"
           >
@@ -877,6 +877,7 @@ defineExpose({
             'search-hit': searchMatches.has(start + ri),
             'search-current': searchList[searchCursor] === start + ri && searchApplied.trim() !== '',
           }"
+          :style="{ width: totalW + 'px' }"
           @click="emit('select-row', start + ri)"
         >
           <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }">
@@ -890,11 +891,11 @@ defineExpose({
           <div
             v-if="showNum"
             class="cell rownum fixed-num"
-            :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }"
+            :style="{ width: W_NUM + 'px', left: Math.max(W_CHK - scrollLeftX, 0) + 'px' }"
           >
             {{ start + ri + 1 }}
           </div>
-          <div class="cell col-pad" :style="{ width: colPadW + 'px' }" />
+          <div class="cell col-pad" :style="{ width: colPadW + 'px', left: W_CHK + W_NUM + 'px' }" />
           <div
             v-for="ci in visibleFlowCols"
             :key="'d' + ci"
@@ -907,7 +908,7 @@ defineExpose({
               sel: inSel(start + ri, ci),
               'sel-preview': selPreviewing(start + ri, ci),
             }"
-            :style="{ width: widths[ci] + 'px' }"
+            :style="{ width: widths[ci] + 'px', left: colX[ci] + 'px' }"
             :title="cellChanged(start + ri, ci)
               ? `原值:${props.rows[start + ri]?.[ci] ?? 'NULL'}`
               : displayValue(start + ri, ci) ?? 'NULL'"
@@ -1070,11 +1071,37 @@ defineExpose({
   border-bottom: 1px solid var(--border-strong);
 }
 .row {
-  display: flex;
-  /* 行宽随内容伸展;列渲染窗口带大缓冲,滚动时极少重排 */
+  position: relative;
+  display: block;
+  /* 行宽 = 全部列宽;单元格绝对定位,横向滚动仅合成器平移 */
   width: max-content;
   min-width: 100%;
+  height: var(--row-h);
   contain: layout style;
+}
+.cell {
+  position: absolute;
+  top: 0;
+}
+.head {
+  position: sticky;
+  top: 0;
+  display: block;
+  height: var(--row-h);
+  z-index: 3;
+}
+.head-cell {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+.fixed-chk,
+.fixed-num,
+.rownum {
+  z-index: 2;
+}
+.fixed-num {
+  box-shadow: 3px 0 6px -2px rgba(0, 0, 0, 0.35);
 }
 .row:hover {
   background: var(--row-hover);
