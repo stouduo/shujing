@@ -1091,7 +1091,7 @@ defineExpose({
 .row.selected,
 .row.selected:hover,
 .row.selected.odd {
-  background: rgba(10, 132, 255, 0.13);
+  background: rgba(133, 135, 246, 0.13);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .row.selected .rownum {
@@ -1102,7 +1102,7 @@ defineExpose({
   outline: 2px solid var(--accent);
   outline-offset: -2px;
   z-index: 4;
-  background: rgba(10, 132, 255, 0.06);
+  background: rgba(133, 135, 246, 0.06);
 }
 .cell.col-pad {
   border-right: none;
@@ -1216,7 +1216,7 @@ defineExpose({
   z-index: 4;
 }
 .col-resize:hover {
-  background: rgba(10, 132, 255, 0.35);
+  background: rgba(133, 135, 246, 0.35);
 }
 .head-label {
   overflow: hidden;
@@ -1263,7 +1263,7 @@ defineExpose({
   font-size: 12px;
   outline: none;
   animation: fade-in 0.08s ease;
-  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.15);
+  box-shadow: 0 0 0 2px rgba(133, 135, 246, 0.15);
 }
 .null {
   color: var(--null-color);
@@ -1291,8 +1291,8 @@ defineExpose({
   gap: 8px;
 }
 .cell.sel {
-  background: rgba(10, 132, 255, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.4);
+  background: rgba(133, 135, 246, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(133, 135, 246, 0.4);
 }
 .cell.sel-preview {
   background: rgba(255, 159, 10, 0.13);

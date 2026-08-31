@@ -135,8 +135,8 @@ const showPreview = computed(() => props.tab.mode === 'create' || true)
   font-weight: 600;
   color: var(--accent);
   padding: 3px 10px;
-  border: 1px solid rgba(10, 132, 255, 0.35);
-  background: rgba(10, 132, 255, 0.1);
+  border: 1px solid rgba(133, 135, 246, 0.35);
+  background: rgba(133, 135, 246, 0.1);
   border-radius: 6px;
 }
 .name-input {

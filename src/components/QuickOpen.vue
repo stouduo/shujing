@@ -332,15 +332,15 @@ function onKeydown(e: KeyboardEvent) {
   cursor: pointer;
 }
 .qo-item.sel {
-  background: rgba(10, 132, 255, 0.14);
+  background: rgba(133, 135, 246, 0.14);
 }
 .qo-item.action {
-  background: rgba(10, 132, 255, 0.07);
-  border: 1px dashed rgba(10, 132, 255, 0.3);
+  background: rgba(133, 135, 246, 0.07);
+  border: 1px dashed rgba(133, 135, 246, 0.3);
   margin-bottom: 4px;
 }
 .qo-item.action.sel {
-  background: rgba(10, 132, 255, 0.2);
+  background: rgba(133, 135, 246, 0.2);
 }
 .qo-tic {
   color: var(--text-tertiary);
@@ -358,7 +358,7 @@ function onKeydown(e: KeyboardEvent) {
   white-space: nowrap;
 }
 .qo-hit {
-  background: rgba(10, 132, 255, 0.3);
+  background: rgba(133, 135, 246, 0.3);
   color: var(--accent);
   border-radius: 2px;
   padding: 0 1px;

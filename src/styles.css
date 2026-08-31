@@ -1,93 +1,93 @@
-/* ── 设计令牌:macOS 暗色质感 ─────────────────────────── */
+/* ── 设计令牌:zinc / Linear 风格(深邃中性 + 靛蓝强调) ── */
 :root {
-  --bg: #1d1d20; /* 窗口底色 */
-  --bg-elevated: #222226; /* 工具栏 */
-  --bg-editor: #1b1b1e; /* 编辑器区 */
-  --bg-grid: #202024; /* 结果表格 */
-  --bg-hover: rgba(255, 255, 255, 0.055);
-  --bg-active: rgba(255, 255, 255, 0.095);
-  --border: rgba(255, 255, 255, 0.065);
-  --border-strong: rgba(255, 255, 255, 0.13);
-  --text: #f5f5f7;
-  --text-secondary: #a8a8af;
-  --text-tertiary: #7c7c86;
-  --accent: #0a84ff;
-  --green: #30d158;
-  --danger: #ff453a;
-  --warn: #ffd60a;
+  --bg: #0e0f11; /* 窗口底色 */
+  --bg-elevated: #141518; /* 工具栏 */
+  --bg-editor: #101114; /* 编辑器区 */
+  --bg-grid: #0f1013; /* 结果表格 */
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(255, 255, 255, 0.09);
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #6d6e78;
+  --accent: #8587f6;
+  --green: #3dd68c;
+  --danger: #f16a5c;
+  --warn: #f5b544;
   --mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
   /* 派生表面 */
-  --bg-head: #26262b; /* 表格表头 */
-  --bg-fixed: #212127; /* 行号/固定列 */
-  --head-hover: #2b2b31;
-  --input-bg: #16161b;
-  --record-bg: #1e1e24;
-  --record-head: #232329;
-  --node-bg: #202026;
-  --node-head: #282833;
-  --quick-bg: #242429;
-  --sidebar-gradient: linear-gradient(180deg, #1a1a1f 0%, #17171b 240px, #151519 100%);
-  --zebra: rgba(255, 255, 255, 0.014);
-  --row-hover: rgba(255, 255, 255, 0.035);
-  --panel-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --panel-shadow: 0 16px 40px rgba(0, 0, 0, 0.34);
-  --sel-bg: rgba(10, 132, 255, 0.13);
+  --bg-head: #16171a; /* 表格表头 */
+  --bg-fixed: #131417; /* 行号/固定列 */
+  --head-hover: #1c1d22;
+  --input-bg: #0b0c0e;
+  --record-bg: #121316;
+  --record-head: #16171b;
+  --node-bg: #121317;
+  --node-head: #17181d;
+  --quick-bg: #15161a;
+  --sidebar-gradient: linear-gradient(180deg, #101113 0%, #0d0e10 240px, #0b0c0e 100%);
+  --zebra: rgba(255, 255, 255, 0.02);
+  --row-hover: rgba(255, 255, 255, 0.04);
+  --panel-inset: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  --panel-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  --sel-bg: rgba(133, 135, 246, 0.16);
   --edit-hl-bg: rgba(255, 170, 0, 0.14);
   --edit-hl-fg: #ffd08a;
   --edit-line: rgba(255, 170, 0, 0.05);
   --edit-mark: #ffaa00;
-  --num-color: #64d2ff;
-  --null-color: #58585d;
-  --inserted-fg: #7ce8a4;
-  --cell-color: #dcdce1;
-  --del-bg: rgba(255, 69, 58, 0.08);
-  --ins-bg: rgba(48, 209, 88, 0.06);
+  --num-color: #79b8ff;
+  --null-color: #565660;
+  --inserted-fg: #3dd68c;
+  --cell-color: #d4d4d8;
+  --del-bg: rgba(241, 106, 92, 0.08);
+  --ins-bg: rgba(61, 214, 140, 0.06);
 }
 
-/* ── 亮色主题 ─────────────────────────────────────── */
+/* ── 亮色主题(shadcn zinc light) ─────────────────── */
 html.light {
-  --bg: #f5f5f7;
-  --bg-elevated: #ececf0;
-  --bg-editor: #fbfbfd;
+  --bg: #f7f7f8;
+  --bg-elevated: #f1f1f3;
+  --bg-editor: #ffffff;
   --bg-grid: #ffffff;
-  --bg-hover: rgba(0, 0, 0, 0.045);
-  --bg-active: rgba(0, 0, 0, 0.075);
-  --border: rgba(0, 0, 0, 0.09);
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.07);
+  --border: rgba(0, 0, 0, 0.08);
   --border-strong: rgba(0, 0, 0, 0.15);
-  --text: #1d1d1f;
-  --text-secondary: #4b4b52;
-  --text-tertiary: #86868b;
-  --accent: #0071e3;
-  --green: #248a3d;
-  --danger: #d70015;
+  --text: #18181b;
+  --text-secondary: #52525b;
+  --text-tertiary: #8a8a93;
+  --accent: #5b5bd6;
+  --green: #1a7f37;
+  --danger: #d13438;
   --warn: #b25000;
 
-  --bg-head: #f2f2f5;
-  --bg-fixed: #f7f7f9;
-  --head-hover: #e8e8ec;
+  --bg-head: #f2f2f4;
+  --bg-fixed: #fafafa;
+  --head-hover: #eaeaec;
   --input-bg: #ffffff;
   --record-bg: #ffffff;
-  --record-head: #f2f2f5;
+  --record-head: #f2f2f4;
   --node-bg: #ffffff;
-  --node-head: #eef0f4;
+  --node-head: #f0f0f2;
   --quick-bg: #ffffff;
-  --sidebar-gradient: linear-gradient(180deg, #f0f0f3 0%, #ededf0 240px, #eaeaee 100%);
-  --zebra: rgba(0, 0, 0, 0.015);
-  --row-hover: rgba(0, 0, 0, 0.03);
-  --panel-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  --panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
-  --sel-bg: rgba(0, 113, 227, 0.1);
+  --sidebar-gradient: linear-gradient(180deg, #f4f4f6 0%, #f1f1f3 240px, #eeeeef 100%);
+  --zebra: rgba(0, 0, 0, 0.018);
+  --row-hover: rgba(0, 0, 0, 0.032);
+  --panel-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+  --sel-bg: rgba(91, 91, 214, 0.1);
   --edit-hl-bg: rgba(255, 170, 0, 0.18);
   --edit-hl-fg: #a05a00;
   --edit-line: rgba(255, 170, 0, 0.07);
   --edit-mark: #d48806;
-  --num-color: #0261a8;
-  --null-color: #98989d;
+  --num-color: #1d4ed8;
+  --null-color: #a6a6ad;
   --inserted-fg: #1a7f37;
-  --cell-color: #26262a;
-  --del-bg: rgba(215, 0, 21, 0.06);
-  --ins-bg: rgba(36, 138, 61, 0.06);
+  --cell-color: #27272a;
+  --del-bg: rgba(209, 52, 56, 0.06);
+  --ins-bg: rgba(26, 127, 55, 0.06);
 }
 
 * {
@@ -112,12 +112,12 @@ body {
 }
 
 ::selection {
-  background: rgba(10, 132, 255, 0.35);
+  background: rgba(133, 135, 246, 0.35);
 }
 
 /* 键盘可达性:focus 可见但不喧宾 */
 :focus-visible {
-  outline: 2px solid rgba(10, 132, 255, 0.45);
+  outline: 2px solid rgba(133, 135, 246, 0.5);
   outline-offset: 1px;
 }
 
@@ -328,10 +328,10 @@ html.in-tauri .sidebar .brand {
   width: 64px;
   height: 64px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #0a84ff, #5e5ce6);
+  background: linear-gradient(135deg, #8587f6, #6e6fe0);
   color: #fff;
   font-size: 30px;
-  box-shadow: 0 12px 32px rgba(10, 132, 255, 0.28);
+  box-shadow: 0 12px 32px rgba(133, 135, 246, 0.28);
 }
 
 .kbd {

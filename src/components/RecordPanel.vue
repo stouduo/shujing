@@ -186,7 +186,7 @@ function formatJson() {
   z-index: 6;
 }
 .rp-resize:hover {
-  background: rgba(10, 132, 255, 0.3);
+  background: rgba(133, 135, 246, 0.3);
 }
 .rp-head {
   display: flex;

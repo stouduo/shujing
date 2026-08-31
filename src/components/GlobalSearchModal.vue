@@ -169,7 +169,7 @@ function preview(hit: SearchHit): string {
   cursor: pointer;
 }
 .gs-hit:hover {
-  background: rgba(10, 132, 255, 0.12);
+  background: rgba(133, 135, 246, 0.12);
 }
 .gs-table {
   flex-shrink: 0;

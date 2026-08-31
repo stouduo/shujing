@@ -656,8 +656,8 @@ function onFilterCol(col: string, op = '=') {
   gap: 8px;
   height: 36px;
   padding: 0 12px;
-  background: rgba(10, 132, 255, 0.08);
-  border-top: 1px solid rgba(10, 132, 255, 0.25);
+  background: rgba(133, 135, 246, 0.08);
+  border-top: 1px solid rgba(133, 135, 246, 0.25);
   flex-shrink: 0;
 }
 .ck-info {

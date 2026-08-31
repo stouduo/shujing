@@ -380,7 +380,7 @@ function nodeCols(name: string): NodeCol[] {
   stroke-width: 1;
 }
 .node:hover .node-box {
-  stroke: rgba(10, 132, 255, 0.6);
+  stroke: rgba(133, 135, 246, 0.6);
 }
 .node-head {
   fill: var(--node-head);

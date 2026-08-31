@@ -231,7 +231,7 @@ async function runExplain() {
 }
 .info .f-badge {
   color: var(--accent);
-  border: 1px solid rgba(10, 132, 255, 0.4);
+  border: 1px solid rgba(133, 135, 246, 0.4);
 }
 .f-title {
   font-size: 12.5px;

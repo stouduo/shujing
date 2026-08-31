@@ -1177,7 +1177,7 @@ async function onConnMenuSelect(key: string | number) {
   width: 24px;
   height: 24px;
   border-radius: 6.5px;
-  background: linear-gradient(135deg, #0a84ff, #5e5ce6);
+  background: linear-gradient(135deg, #8587f6, #6e6fe0);
   color: #fff;
   font-size: 14px;
   box-shadow: 0 3px 8px rgba(94, 92, 230, 0.35);

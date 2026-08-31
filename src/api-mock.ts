@@ -185,7 +185,7 @@ let mockConns: ConnInfo[] = [
     password: null,
     database: null,
     filePath: '/tmp/demo.db',
-    color: '#0a84ff',
+    color: '#8587f6',
   },
   {
     id: 'mock-redis',
