@@ -296,13 +296,6 @@ const colX = computed(() => {
   return arr
 })
 
-/** 窗口首列之前的空白(被滚出窗口的前缀列宽) */
-const colPadW = computed(() => {
-  const win = visibleFlowCols.value
-  if (!win.length) return 0
-  return Math.max(0, (colX.value[win[0]] ?? 0) - fixedBase.value)
-})
-
 const visibleFlowCols = computed(() => {
   const vw = scroller.value?.clientWidth ?? 1200
   const viewL = scrollLeftX.value + fixedBase.value - 30
@@ -792,7 +785,7 @@ defineExpose({
     >
       <div class="inner" :style="{ width: totalW + 'px' }">
         <div class="head">
-          <div v-if="editable" class="cell head-cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }">
+          <div v-if="editable" class="cell head-cell fixed-chk" :style="{ width: W_CHK + 'px', left: scrollLeftX + 'px' }">
             <input
               type="checkbox"
               class="cb"
@@ -801,8 +794,7 @@ defineExpose({
               @change="emit('check-page', ($event.target as HTMLInputElement).checked)"
             />
           </div>
-          <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }">#</div>
-          <div class="cell head-cell col-pad" :style="{ width: colPadW + 'px', left: W_CHK + W_NUM + 'px' }" />
+          <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: scrollLeftX + W_CHK + 'px' }">#</div>
           <div
             v-for="i in visibleFlowCols"
             :key="'f' + i"
@@ -829,7 +821,7 @@ defineExpose({
           :key="'new-' + ni"
           class="row inserted"
         >
-          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }" />
+          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: scrollLeftX + 'px' }" />
           <div
             v-if="showNum"
             class="cell rownum fixed-num new-remove"
@@ -839,7 +831,6 @@ defineExpose({
           >
             −
           </div>
-          <div class="cell col-pad" :style="{ width: colPadW + 'px', left: W_CHK + W_NUM + 'px' }" />
           <div
             v-for="ci in visibleFlowCols"
             :key="'n' + ci"
@@ -880,7 +871,7 @@ defineExpose({
           :style="{ width: totalW + 'px' }"
           @click="emit('select-row', start + ri)"
         >
-          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }">
+          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: scrollLeftX + 'px' }">
             <input
               type="checkbox"
               class="cb"
@@ -895,7 +886,6 @@ defineExpose({
           >
             {{ start + ri + 1 }}
           </div>
-          <div class="cell col-pad" :style="{ width: colPadW + 'px', left: W_CHK + W_NUM + 'px' }" />
           <div
             v-for="ci in visibleFlowCols"
             :key="'d' + ci"
@@ -1130,9 +1120,6 @@ defineExpose({
   outline-offset: -2px;
   z-index: 4;
   background: rgba(133, 135, 246, 0.06);
-}
-.cell.col-pad {
-  border-right: none;
 }
 .row.search-hit {
   background: rgba(255, 213, 74, 0.06) !important;
