@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, inject, nextTick, ref, watch, type Ref } from 'vue'
 import {
   NButton,
   NDropdown,
@@ -53,6 +53,25 @@ const expandedDb = ref<Record<string, string>>({})
 /** 各库的表缓存(键: connId/dbname) */
 const dbTables = ref<Record<string, import('../types').TableMeta[]>>({})
 const dbLoading = ref<Record<string, boolean>>({})
+
+// ── 底部状态:主题切换 / 连接信息 / 快捷键(从主区迁入) ──
+const theme = inject<'dark' | 'light'>('theme', 'dark')
+const toggleTheme = inject<() => void>('toggleTheme', () => {})
+const showKeys = inject<Ref<boolean>>('showKeys', ref(false))
+
+const activeTabS = computed(() => store.tabs.find((t) => t.id === store.activeTabId))
+const activeConnS = computed(() => store.connById(activeTabS.value?.connId ?? ''))
+const connStatus = computed(() => {
+  const conn = activeConnS.value
+  if (!conn) return { text: '未选择连接', online: false }
+  const live = conn.id ? store.live[conn.id] : undefined
+  const parts = [conn.name, conn.dbType]
+  if (live) {
+    parts.push((live.version ?? '').split(',')[0])
+    return { text: parts.join(' · '), online: true }
+  }
+  return { text: parts.join(' · ') + ' · 未连接', online: false }
+})
 
 // ── 库显示筛选(多库连接):勾选展示哪些库,按连接记忆 ──
 const DB_FILTER_KEY = 'dblens_dbfilter'
@@ -1044,6 +1063,18 @@ async function onConnMenuSelect(key: string | number) {
       @select="onConnMenuSelect"
       @clickoutside="connMenuShow = false"
     />
+    <div class="side-footer" data-tauri-drag-region>
+      <div class="sf-conn">
+        <span class="sf-dot" :class="{ on: connStatus.online }" />
+        <span class="sf-text" :title="connStatus.text">{{ connStatus.text }}</span>
+      </div>
+      <div class="sf-ops">
+        <button class="sf-btn" :title="theme === 'dark' ? '切换到亮色' : '切换到暗色'" @click="toggleTheme()">
+          <Icon :name="theme === 'dark' ? 'sun' : 'moon'" :size="13" />
+        </button>
+        <button class="sf-btn kbd" title="快捷键(?)" @click="showKeys = true">?</button>
+      </div>
+    </div>
   </aside>
 
   <!-- 新建对象弹窗 -->
@@ -1473,6 +1504,64 @@ async function onConnMenuSelect(key: string | number) {
   user-select: none;
 }
 .tbl:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.side-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+.sf-conn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.sf-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.sf-dot.on {
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(61, 214, 140, 0.5);
+}
+.sf-text {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sf-ops {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.sf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 11px;
+}
+.sf-btn:hover {
   color: var(--text);
   background: var(--bg-hover);
 }

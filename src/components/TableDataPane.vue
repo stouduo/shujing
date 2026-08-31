@@ -333,31 +333,46 @@ function onFilterCol(col: string, op = '=') {
       <span v-if="tab.total !== null" class="total">共 {{ tab.total.toLocaleString() }} 行</span>
     </div>
     <div v-if="showFilterBar" class="filter-bar">
-      <div class="fb-modes">
-        <button
-          class="fb-mode"
-          :class="{ on: tab.filterMode === 'fields' }"
-          @click="tab.filterMode = 'fields'"
-        >字段</button>
-        <button
-          class="fb-mode"
-          :class="{ on: tab.filterMode === 'free' }"
-          @click="tab.filterMode = 'free'"
-        >自由</button>
+      <!-- 顶行:模式切换 + 操作 -->
+      <div class="fb-top">
+        <div class="fb-modes">
+          <button
+            class="fb-mode"
+            :class="{ on: tab.filterMode === 'fields' }"
+            @click="tab.filterMode = 'fields'"
+          >字段</button>
+          <button
+            class="fb-mode"
+            :class="{ on: tab.filterMode === 'free' }"
+            @click="tab.filterMode = 'free'"
+          >自由</button>
+        </div>
+        <div class="f-spacer" />
+        <template v-if="tab.filterMode === 'fields'">
+          <n-button size="tiny" quaternary @click="store.addFilter(tab.id)">＋ 添加条件</n-button>
+          <n-button v-if="tab.filters.length" size="tiny" quaternary @click="store.clearFilters(tab.id)">
+            清除全部
+          </n-button>
+          <n-button
+            v-if="tab.filters.length"
+            size="tiny"
+            type="primary"
+            secondary
+            :loading="tab.loading"
+            @click="store.applyFilters(tab.id)"
+          >
+            应用
+          </n-button>
+        </template>
+        <template v-else>
+          <n-button size="tiny" type="primary" secondary :loading="tab.loading" @click="store.applyFilters(tab.id)">应用</n-button>
+          <n-button size="tiny" quaternary @click="() => { tab.freeWhere = ''; store.applyFilters(tab.id) }">清除</n-button>
+        </template>
+        <span class="f-count" v-if="tab.total !== null">匹配 {{ tab.total.toLocaleString() }} 行</span>
+        <button class="f-close" title="收起筛选栏" @click="showFilterBar = false">×</button>
       </div>
-      <template v-if="tab.filterMode === 'free'">
-        <n-input
-          v-model:value="tab.freeWhere"
-          size="tiny"
-          class="f-free mono"
-          placeholder="WHERE 之后的 SQL,如:age > 25 AND city = '北京'"
-          @keyup.enter="store.applyFilters(tab.id)"
-          @blur="store.applyFilters(tab.id)"
-        />
-        <n-button size="tiny" type="primary" secondary :loading="tab.loading" @click="store.applyFilters(tab.id)">应用</n-button>
-        <n-button size="tiny" quaternary @click="() => { tab.freeWhere = ''; store.applyFilters(tab.id) }">清除</n-button>
-      </template>
-      <template v-else-if="tab.filters.length">
+      <!-- 条件区:每个条件独占一行;自由模式为多行编辑 -->
+      <div v-if="tab.filterMode === 'fields' && tab.filters.length" class="fb-rows">
         <div v-for="(f, i) in tab.filters" :key="i" class="filter-row">
           <n-select
             v-model:value="f.column"
@@ -393,26 +408,17 @@ function onFilterCol(col: string, op = '=') {
           <span v-else class="f-null-hint">无需值</span>
           <button class="f-del" title="移除该条件" @click="store.removeFilter(tab.id, i)">×</button>
         </div>
-      </template>
-      <div v-if="tab.filterMode === 'fields'" class="filter-ops">
-        <n-button size="tiny" quaternary @click="store.addFilter(tab.id)">＋ 条件</n-button>
-        <n-button v-if="tab.filters.length" size="tiny" quaternary @click="store.clearFilters(tab.id)">
-          清除全部
-        </n-button>
-        <n-button
-          v-if="tab.filters.length"
-          size="tiny"
-          type="primary"
-          secondary
-          :loading="tab.loading"
-          @click="store.applyFilters(tab.id)"
-        >
-          应用
-        </n-button>
-        <span class="f-count" v-if="tab.total !== null">匹配 {{ tab.total.toLocaleString() }} 行</span>
       </div>
-      <div class="f-spacer" />
-      <button class="f-close" title="收起筛选栏" @click="showFilterBar = false">×</button>
+      <div v-else-if="tab.filterMode === 'free'" class="fb-free">
+        <n-input
+          v-model:value="tab.freeWhere"
+          type="textarea"
+          class="f-free mono"
+          placeholder="WHERE 之后的 SQL,如:age > 25 AND city = '北京'(⌘↵ 应用)"
+          :autosize="{ minRows: 3, maxRows: 6 }"
+          @keydown.enter.exact.prevent="store.applyFilters(tab.id)"
+        />
+      </div>
     </div>
     <div class="grid-area">
       <n-spin v-if="tab.loading && !tab.result" class="loading" size="medium" />
@@ -669,13 +675,25 @@ function onFilterCol(col: string, op = '=') {
 }
 .filter-bar {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
   padding: 8px 12px;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+.fb-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fb-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fb-free {
+  display: flex;
 }
 .filter-row {
   display: flex;

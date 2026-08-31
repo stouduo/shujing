@@ -82,6 +82,7 @@ export type IconName =
   | 'plusCircle'
   | 'search'
   | 'sun'
+  | 'moon'
   | 'box'
   | 'layers'
   | 'diamond'

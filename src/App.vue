@@ -97,6 +97,9 @@ function toggleTheme() {
 
 applyTheme()
 provide('theme', theme)
+const showKeys = ref(false)
+provide('toggleTheme', toggleTheme)
+provide('showKeys', showKeys)
 
 // 标签页右键菜单
 const tabCtx = ref({ show: false, x: 0, y: 0, id: '' })
@@ -242,8 +245,6 @@ onMounted(() => {
   document.addEventListener('contextmenu', onTabsContextmenu, true)
 })
 
-const showKeys = ref(false)
-
 // 标签重命名(双击)
 const renamingId = ref('')
 const renameDraft = ref('')
@@ -312,19 +313,6 @@ watch(
   },
   { immediate: true },
 )
-
-const activeConn = computed(() => store.connById(activeTab.value?.connId ?? ''))
-
-const statusLeft = computed(() => {
-  if (!activeConn.value) return '未选择连接'
-  const live = activeConn.value.id ? store.live[activeConn.value.id] : undefined
-  const parts = [activeConn.value.name, activeConn.value.dbType]
-  if (live) {
-    parts.push(live.version.split(',')[0])
-    return { text: parts.join(' · '), online: true }
-  }
-  return { text: parts.join(' · ') + ' · 未连接', online: false }
-})
 
 // 标签图标由 Pane Registry 提供(新增面板类型自动生效)
 const tabIconOf = (kind: string): IconName => paneOf(kind)?.icon ?? 'code'
@@ -524,18 +512,7 @@ function openEdit(info: ConnInfo) {
                 按 <span class="kbd">⌘T</span> 新建查询,或点击左侧连接浏览数据
               </div>
             </div>
-            <div class="statusbar" data-tauri-drag-region>
-              <button class="theme-toggle" :title="theme === 'dark' ? '切换到亮色' : '切换到暗色'" @click="toggleTheme">
-                <Icon name="sun" :size="12" />
-              </button>
-              <div class="status-left">
-                <span v-if="typeof statusLeft === 'object'" class="status-dot" :class="{ on: statusLeft.online }" />
-                <span>{{ typeof statusLeft === 'object' ? statusLeft.text : statusLeft }}</span>
-              </div>
-              <button class="keys-hint-btn" title="快捷键(?)" @click="showKeys = true">
-                <span class="kbd">?</span>
-              </button>
-            </div>
+
           </div>
         </div>
         <ConnectionModal v-model:show="showConnModal" :editing="editingConn" />
