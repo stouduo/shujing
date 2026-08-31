@@ -2,6 +2,7 @@
  * 表数据操作 actions:分页 / 排序 / 筛选 / 编辑回写 / 行操作
  * 从 app.ts 拆出,通过展开合并进主 store。
  */
+import { markRaw } from 'vue'
 import * as api from '../api'
 import { quoteIdent, tableRef } from './helpers'
 import type { TableTab, Tab } from '../types'
@@ -101,7 +102,7 @@ export const tableActions = {
     try {
       const results = await api.runSql(tab.connId, this.tablePageSql(tab), tab.pageSize)
       if (seq !== tab.loadSeq) return
-      tab.result = results[0] ?? null
+      tab.result = markRaw(results[0] ?? null)
       if (!keepTotal) tab.total = null
     } catch (e) {
       if (seq !== tab.loadSeq) return

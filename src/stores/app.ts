@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { markRaw } from 'vue'
 import * as api from '../api'
 import { reviveTab, serializeTab } from '../panes/registry'
 import { tableActions } from './tableActions'
@@ -992,7 +993,8 @@ export const useAppStore = defineStore('app', {
             },
           ]
         } else {
-          tab.results = await api.runSql(tab.connId, execSql)
+          // 大结果集绕开深度代理(整体替换、从不深改),降低内存与访问开销
+        tab.results = markRaw(await api.runSql(tab.connId, execSql))
         }
         tab.activeSet = 0
         // 默认标题的查询页,运行后按 FROM 的表名自动命名
