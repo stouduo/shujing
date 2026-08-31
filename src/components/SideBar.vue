@@ -56,6 +56,7 @@ const dbLoading = ref<Record<string, boolean>>({})
 
 // ── 底部状态:主题切换 / 连接信息 / 快捷键(从主区迁入) ──
 const theme = inject<'dark' | 'light'>('theme', 'dark')
+const openSettings = inject<() => void>('openSettings', () => {})
 const toggleTheme = inject<() => void>('toggleTheme', () => {})
 const showKeys = inject<Ref<boolean>>('showKeys', ref(false))
 
@@ -1073,6 +1074,9 @@ async function onConnMenuSelect(key: string | number) {
           <Icon :name="theme === 'dark' ? 'sun' : 'moon'" :size="13" />
         </button>
         <button class="sf-btn kbd" title="快捷键(?)" @click="showKeys = true">?</button>
+        <button class="sf-btn" title="外观设置" @click="openSettings()">
+          <Icon name="settings" :size="13" />
+        </button>
       </div>
     </div>
   </aside>

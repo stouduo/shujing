@@ -83,6 +83,8 @@ export type IconName =
   | 'search'
   | 'sun'
   | 'moon'
+  | 'settings'
+  | 'moon'
   | 'box'
   | 'layers'
   | 'diamond'

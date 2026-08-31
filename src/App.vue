@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue'
 import {
   NConfigProvider,
   NDialogProvider,
@@ -64,39 +64,75 @@ function endSplit() {
   }
 }
 
-// ── 主题 ──────────────────────────────────────────────
-// 主题:手动选择 > 系统跟随
-const getInitialTheme = (): 'dark' | 'light' => {
-  const saved = localStorage.getItem('dblens_theme')
-  if (saved === 'light' || saved === 'dark') return saved
-  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+// ── 外观设置:主题模式 / 强调色 / 等宽字体(localStorage 持久化) ──
+type ThemeMode = 'auto' | 'dark' | 'light'
+const ACCENTS: Record<string, { dark: string; light: string }> = {
+  indigo: { dark: '#8587F6', light: '#5B5BD6' },
+  violet: { dark: '#A78BFA', light: '#7C3AED' },
+  cyan: { dark: '#38BDF8', light: '#0891B2' },
+  emerald: { dark: '#34D399', light: '#059669' },
+  amber: { dark: '#F5B544', light: '#D97706' },
+  rose: { dark: '#FB7185', light: '#E11D48' },
 }
-const theme = ref<'dark' | 'light'>(getInitialTheme())
+const MONOS: Record<string, string> = {
+  jb: "'JetBrains Mono', ui-monospace, Menlo, monospace",
+  sf: "'SF Mono', ui-monospace, Menlo, monospace",
+  menlo: 'Menlo, monospace',
+  consolas: 'Consolas, monospace',
+}
 
-// 监听系统主题变化(仅未手动选择时)
-const themeAuto = ref(!localStorage.getItem('dblens_theme'))
-if (themeAuto.value) {
-  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
-    if (themeAuto.value) {
-      theme.value = e.matches ? 'light' : 'dark'
-      applyTheme()
-    }
-  })
-}
+const settings = reactive({
+  themeMode: (localStorage.getItem('dblens_theme_mode') ||
+    localStorage.getItem('dblens_theme') ||
+    'auto') as ThemeMode,
+  accent: localStorage.getItem('dblens_accent') || 'indigo',
+  monoFont: localStorage.getItem('dblens_mono') || 'jb',
+})
+watch(settings, () => {
+  try {
+    localStorage.setItem('dblens_theme_mode', settings.themeMode)
+    localStorage.setItem('dblens_accent', settings.accent)
+    localStorage.setItem('dblens_mono', settings.monoFont)
+  } catch {
+    /* 忽略 */
+  }
+})
+
+const systemDark = ref(!window.matchMedia('(prefers-color-scheme: light)').matches)
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+  systemDark.value = !e.matches
+})
+
+const theme = computed<'dark' | 'light'>(() =>
+  settings.themeMode === 'auto' ? (systemDark.value ? 'dark' : 'light') : settings.themeMode,
+)
 
 function applyTheme() {
   document.documentElement.classList.toggle('light', theme.value === 'light')
 }
 
-function toggleTheme() {
-  themeAuto.value = false
-  theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  localStorage.setItem('dblens_theme', theme.value)
-  applyTheme()
+function applyAccent() {
+  const a = ACCENTS[settings.accent] ?? ACCENTS.indigo
+  const root = document.documentElement
+  root.style.setProperty('--accent', theme.value === 'dark' ? a.dark : a.light)
+  root.style.setProperty('--accent-soft', (theme.value === 'dark' ? a.dark : a.light) + '29')
 }
 
-applyTheme()
+function applyMono() {
+  document.documentElement.style.setProperty('--mono', MONOS[settings.monoFont] ?? MONOS.jb)
+}
+
+function toggleTheme() {
+  settings.themeMode = theme.value === 'dark' ? 'light' : 'dark'
+}
+
+watch(theme, applyTheme, { immediate: true })
+watch([() => settings.accent, theme], applyAccent, { immediate: true })
+watch(() => settings.monoFont, applyMono, { immediate: true })
+
 provide('theme', theme)
+const showSettings = ref(false)
+provide('openSettings', () => (showSettings.value = true))
 const showKeys = ref(false)
 provide('toggleTheme', toggleTheme)
 provide('showKeys', showKeys)
@@ -553,6 +589,45 @@ function openEdit(info: ConnInfo) {
           @clickoutside="tabListShow = false"
         />
         <Teleport to="body">
+          <div v-if="showSettings" class="settings-overlay" @click.self="showSettings = false">
+            <div class="settings-popup">
+              <div class="settings-head">
+                <span class="settings-title">外观设置</span>
+                <button class="settings-close" @click="showSettings = false">×</button>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label">主题</span>
+                <div class="seg">
+                  <button :class="{ on: settings.themeMode === 'auto' }" @click="settings.themeMode = 'auto'">跟随系统</button>
+                  <button :class="{ on: settings.themeMode === 'dark' }" @click="settings.themeMode = 'dark'">暗色</button>
+                  <button :class="{ on: settings.themeMode === 'light' }" @click="settings.themeMode = 'light'">亮色</button>
+                </div>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label">强调色</span>
+                <div class="swatches">
+                  <button
+                    v-for="(c, k) in ACCENTS"
+                    :key="k"
+                    class="swatch"
+                    :class="{ on: settings.accent === k }"
+                    :style="{ background: theme === 'dark' ? c.dark : c.light }"
+                    :title="k"
+                    @click="settings.accent = String(k)"
+                  />
+                </div>
+              </div>
+              <div class="settings-row">
+                <span class="settings-label">等宽字体</span>
+                <select v-model="settings.monoFont" class="settings-select mono">
+                  <option value="jb">JetBrains Mono</option>
+                  <option value="sf">SF Mono</option>
+                  <option value="menlo">Menlo</option>
+                  <option value="consolas">Consolas</option>
+                </select>
+              </div>
+            </div>
+          </div>
           <div v-if="showKeys" class="keys-overlay" @click.self="showKeys = false">
             <div class="keys-popup">
               <div class="keys-popup-head">
@@ -642,6 +717,105 @@ function openEdit(info: ConnInfo) {
 .theme-toggle:hover {
   color: var(--warn);
   background: var(--bg-hover);
+}
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.settings-popup {
+  width: 420px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  padding: 18px 22px;
+}
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.settings-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.settings-close {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.settings-close:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+.settings-label {
+  width: 80px;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.seg button {
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.seg button.on {
+  background: var(--bg-active);
+  color: var(--text);
+  font-weight: 600;
+}
+.swatches {
+  display: flex;
+  gap: 8px;
+}
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.swatch.on {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--bg-elevated);
+}
+.settings-select {
+  flex: 1;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 12px;
+  padding: 0 6px;
+  outline: none;
 }
 .keys-overlay {
   position: fixed;
