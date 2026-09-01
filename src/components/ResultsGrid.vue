@@ -280,54 +280,11 @@ const visible = computed(() => props.rows.slice(start.value, end.value))
 
 function onScroll() {
   commitEdit()
-  scrollLeftX.value = scroller.value?.scrollLeft ?? 0
   vscroll.onScroll()
 }
 
 const showNum = computed(() => props.editable && !hideRowNumLocal.value)
 const fixedBase = computed(() => (props.editable ? W_CHK : 0) + (showNum.value ? W_NUM : 0))
-
-// ── 列虚拟滚动:大表(>60 列)只渲染可视列 ± 1 视口缓冲 ──
-const scrollLeftX = ref(0)
-const COL_VIRTUAL_THRESHOLD = 60
-
-/** 非 pinned 列序列(列索引) */
-const flowCols = computed(() => colOrder.value.filter((i) => !pinned.value.includes(props.columns[i])))
-
-/** 是否启用列虚拟(列数超阈值才启用,常规表全渲染) */
-const colVirtualOn = computed(() => flowCols.value.length > COL_VIRTUAL_THRESHOLD)
-
-/** 各 flow 列的绝对 X 坐标(含 ☑/# 前置宽度) */
-const colX = computed(() => {
-  const arr: number[] = []
-  let x = fixedBase.value
-  for (const i of colOrder.value) {
-    arr[i] = x
-    x += widths.value[i]
-  }
-  return arr
-})
-
-/** 可视列窗口:与 [scrollLeft + fixedBase - vw, scrollLeft + fixedBase + 2vw] 有重叠的列 */
-const visibleFlowCols = computed(() => {
-  if (!colVirtualOn.value) return flowCols.value
-  const vw = scroller.value?.clientWidth ?? 1200
-  const viewL = scrollLeftX.value + fixedBase.value - vw
-  const viewR = scrollLeftX.value + fixedBase.value + vw * 2
-  const out: number[] = []
-  for (const i of flowCols.value) {
-    const x = colX.value[i]
-    if (x < viewR && x + widths.value[i] > viewL) out.push(i)
-  }
-  return out
-})
-
-/** 首个可视 flow 列之前被跳过的前缀宽度(col-pad 占位) */
-const colPadW = computed(() => {
-  const win = visibleFlowCols.value
-  if (!win.length || !colVirtualOn.value) return 0
-  return Math.max(0, (colX.value[win[0]] ?? 0) - fixedBase.value)
-})
 
 // ── 列宽拖拽 ──────────────────────────────────────────
 const resizing = ref<{ col: number; startX: number; startW: number } | null>(null)
@@ -799,7 +756,7 @@ defineExpose({
     >
       <div class="inner" :style="{ width: totalW + 'px' }">
         <div class="head">
-          <div v-if="editable" class="cell head-cell fixed-chk" :style="{ width: W_CHK + 'px', left: scrollLeftX + 'px' }">
+          <div v-if="editable" class="cell head-cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }">
             <input
               type="checkbox"
               class="cb"
@@ -808,14 +765,16 @@ defineExpose({
               @change="emit('check-page', ($event.target as HTMLInputElement).checked)"
             />
           </div>
-          <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: scrollLeftX + W_CHK + 'px' }">#</div>
-          <div v-if="colVirtualOn" class="cell head-cell col-pad" :style="{ width: colPadW + 'px', left: scrollLeftX + fixedBase + 'px' }" />
+          <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }">#</div>
           <div
-            v-for="i in visibleFlowCols"
-            :key="'f' + i"
+            v-for="i in colOrder"
+            :key="i"
             class="cell head-cell"
-            :class="{ sortable: sortable }"
-            :style="{ width: widths[i] + 'px', left: colX[i] + 'px' }"
+            :class="{ sortable: sortable, pinned: pinned.includes(props.columns[i]) }"
+            :style="{
+              width: widths[i] + 'px',
+              left: pinned.includes(props.columns[i]) ? (pinnedLeft[props.columns[i]] ?? 0) + 'px' : undefined,
+            }"
             :title="headTitle(columns[i])"
             @click="sortable && emit('sort', columns[i])"
             @contextmenu="openHeadCtx($event, columns[i])"
@@ -836,22 +795,25 @@ defineExpose({
           :key="'new-' + ni"
           class="row inserted"
         >
-          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: scrollLeftX + 'px' }" />
+          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }" />
           <div
             v-if="showNum"
             class="cell rownum fixed-num new-remove"
             title="移除该新行"
-            :style="{ width: W_NUM + 'px', left: scrollLeftX + W_CHK + 'px' }"
+            :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }"
             @click="emit('remove-insert', ni)"
           >
             −
           </div>
-          <div v-if="colVirtualOn" class="cell col-pad" :style="{ width: colPadW + 'px', left: scrollLeftX + fixedBase + 'px' }" />
           <div
-            v-for="ci in visibleFlowCols"
+            v-for="ci in colOrder"
             :key="'n' + ci"
             class="cell editable inserted-cell"
-            :style="{ width: widths[ci] + 'px', left: colX[ci] + 'px' }"
+            :class="{ pinned: pinned.includes(props.columns[ci]) }"
+            :style="{
+              width: widths[ci] + 'px',
+              left: pinned.includes(props.columns[ci]) ? (pinnedLeft[props.columns[ci]] ?? 0) + 'px' : undefined,
+            }"
             title="点击输入新值"
             @click="startEditNew(ni, ci)"
           >
@@ -887,7 +849,7 @@ defineExpose({
           :style="{ width: totalW + 'px' }"
           @click="emit('select-row', start + ri)"
         >
-          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: scrollLeftX + 'px' }">
+          <div v-if="editable" class="cell fixed-chk" :style="{ width: W_CHK + 'px', left: '0px' }">
             <input
               type="checkbox"
               class="cb"
@@ -898,7 +860,7 @@ defineExpose({
           <div
             v-if="showNum"
             class="cell rownum fixed-num"
-            :style="{ width: W_NUM + 'px', left: scrollLeftX + W_CHK + 'px' }"
+            :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }"
           >
             {{ start + ri + 1 }}
           </div>
