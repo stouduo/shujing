@@ -5,7 +5,6 @@ import { useColumnLayout } from '../composables/useColumnLayout'
 import { useVirtualScroll } from '../composables/useVirtualScroll'
 import { useCellEditing } from '../composables/useCellEditing'
 import { useContextMenus } from '../composables/useContextMenus'
-import { useVirtualizer } from '@tanstack/vue-virtual'
 import type { OrderDir } from '../types'
 
 const props = defineProps<{
@@ -279,42 +278,6 @@ const vscroll = useVirtualScroll({ rowCount: computed(() => props.rows.length), 
 const { scroller, start, end } = vscroll
 const visible = computed(() => props.rows.slice(start.value, end.value))
 
-// ── 列虚拟滚动(TanStack,横向;仅大表启用) ──────────
-const COL_VIRTUAL_THRESHOLD = 60
-const colVirtualOn = computed(() => colOrder.value.length > COL_VIRTUAL_THRESHOLD)
-
-/** 非 pinned 列序列(列索引) */
-const flowCols = computed(() => colOrder.value.filter((i) => !pinned.value.includes(props.columns[i])))
-const flowWidths = computed(() => flowCols.value.map((i) => widths.value[i]))
-
-const colVirt = useVirtualizer({
-  count: flowCols.value.length,
-  getScrollElement: () => scroller.value,
-  horizontal: true,
-  estimateSize: (i: number) => flowWidths.value[i] ?? 120,
-  overscan: 8,
-  getItemKey: (i: number) => flowCols.value[i] ?? i,
-})
-const virtCols = computed(() => colVirt.value.getVirtualItems() as { index: number; key: number; start: number; size: number }[])
-/** 渲染的列:虚拟窗口(flow 列) */
-const renderCols = computed(() =>
-  colVirtualOn.value
-    ? virtCols.value.map((v) => ({ i: v.key as number, left: fixedBase.value + v.start }))
-    : flowCols.value.map((i) => ({ i, left: undefined as number | undefined })),
-)
-/** 非虚拟模式下列的绝对 X(fixedBase 起累计) */
-const colAbsX = computed(() => {
-  const arr: number[] = []
-  let x = fixedBase.value
-  for (const i of colOrder.value) {
-    arr[i] = x
-    x += widths.value[i]
-  }
-  return arr
-})
-function colStartX(i: number): number {
-  return colAbsX.value[i] ?? fixedBase.value
-}
 
 
 function onScroll() {
@@ -374,6 +337,7 @@ const {
   hideRowNum: hideRowNumRef,
   widths,
   colOrder,
+  pinnedLeft,
   totalW,
   setWidth,
   togglePin,
@@ -805,22 +769,25 @@ defineExpose({
           </div>
           <div v-if="showNum" class="cell head-cell fixed-num" :style="{ width: W_NUM + 'px', left: W_CHK + 'px' }">#</div>
           <div
-            v-for="c in renderCols"
-            :key="'f' + c.i"
+            v-for="i in colOrder"
+            :key="i"
             class="cell head-cell"
-            :class="{ sortable: sortable }"
-            :style="{ width: widths[c.i] + 'px', left: (c.left ?? colStartX(c.i)) + 'px' }"
-            :title="headTitle(columns[c.i])"
-            @click="sortable && emit('sort', columns[c.i])"
-            @contextmenu="openHeadCtx($event, columns[c.i])"
+            :class="{ sortable: sortable, pinned: pinned.includes(props.columns[i]) }"
+            :style="{
+              width: widths[i] + 'px',
+              left: pinned.includes(props.columns[i]) ? (pinnedLeft[props.columns[i]] ?? 0) + 'px' : undefined,
+            }"
+            :title="headTitle(columns[i])"
+            @click="sortable && emit('sort', columns[i])"
+            @contextmenu="openHeadCtx($event, columns[i])"
           >
-            <span class="head-label">{{ columns[c.i] }}</span>
-            <span v-if="sortIcon(columns[c.i])" class="sort-icon">{{ sortIcon(columns[c.i]) }}</span>
+            <span class="head-label">{{ columns[i] }}</span>
+            <span v-if="sortIcon(columns[i])" class="sort-icon">{{ sortIcon(columns[i]) }}</span>
             <span
               class="col-resize"
               title="拖拽调整列宽 · 双击自适应"
-              @pointerdown="(e: PointerEvent) => startResize(e, c.i)"
-              @dblclick.stop="autoFitColumn(c.i)"
+              @pointerdown="(e: PointerEvent) => startResize(e, i)"
+              @dblclick.stop="autoFitColumn(i)"
             />
           </div>
         </div>
@@ -841,15 +808,19 @@ defineExpose({
             −
           </div>
           <div
-            v-for="c in renderCols"
-            :key="'n' + c.i"
+            v-for="ci in colOrder"
+            :key="'n' + ci"
             class="cell editable inserted-cell"
-            :style="{ width: widths[c.i] + 'px', left: (c.left ?? colStartX(c.i)) + 'px' }"
+            :class="{ pinned: pinned.includes(props.columns[ci]) }"
+            :style="{
+              width: widths[ci] + 'px',
+              left: pinned.includes(props.columns[ci]) ? (pinnedLeft[props.columns[ci]] ?? 0) + 'px' : undefined,
+            }"
             title="点击输入新值"
-            @click="startEditNew(ni, c.i)"
+            @click="startEditNew(ni, ci)"
           >
             <input
-              v-if="editNew && editNew.ni === ni && editNew.c === c.i"
+              v-if="editNew && editNew.ni === ni && editNew.c === ci"
               v-model="draft"
               class="cell-input mono"
               :ref="focusEditEl"
@@ -858,7 +829,7 @@ defineExpose({
               @keydown.tab.prevent="moveEdit($event.shiftKey ? -1 : 1)"
               @blur="commitEdit"
             />
-            <span v-else-if="newCellValue(ni, c.i)" class="inserted-val">{{ newCellValue(ni, c.i) }}</span>
+            <span v-else-if="newCellValue(ni, ci)" class="inserted-val">{{ newCellValue(ni, ci) }}</span>
             <span v-else class="null-light">点击输入</span>
           </div>
         </div>
@@ -896,41 +867,45 @@ defineExpose({
             {{ start + ri + 1 }}
           </div>
           <div
-            v-for="c in renderCols"
-            :key="'d' + c.i"
+            v-for="ci in colOrder"
+            :key="'d' + ci"
             class="cell"
             :class="{
-              num: isNum(displayValue(start + ri, c.i)),
-              edited: cellChanged(start + ri, c.i),
+              num: isNum(displayValue(start + ri, ci)),
+              edited: cellChanged(start + ri, ci),
               editable: editable && !rowDeleted(start + ri),
-              'nav-focus': navCell?.r === start + ri && navCell?.c === c.i,
-              sel: inSel(start + ri, c.i),
-              'sel-preview': selPreviewing(start + ri, c.i),
+              pinned: pinned.includes(props.columns[ci]),
+              'nav-focus': navCell?.r === start + ri && navCell?.c === ci,
+              sel: inSel(start + ri, ci),
+              'sel-preview': selPreviewing(start + ri, ci),
             }"
-            :style="{ width: widths[c.i] + 'px', left: (c.left ?? colStartX(c.i)) + 'px' }"
-            :title="cellChanged(start + ri, c.i)
-              ? `原值:${props.rows[start + ri]?.[c.i] ?? 'NULL'}`
-              : displayValue(start + ri, c.i) ?? 'NULL'"
-            @click="onCellClick($event, start + ri, c.i)"
-            @pointerdown="onCellPointerDown($event, start + ri, c.i)"
-            @pointerenter="onCellPointerEnter($event, start + ri, c.i)"
-            @dblclick="onCellDblClick(start + ri, c.i)"
-            @contextmenu="openCtx($event, start + ri, c.i)"
+            :style="{
+              width: widths[ci] + 'px',
+              left: pinned.includes(props.columns[ci]) ? (pinnedLeft[props.columns[ci]] ?? 0) + 'px' : undefined,
+            }"
+            :title="cellChanged(start + ri, ci)
+              ? `原值:${props.rows[start + ri]?.[ci] ?? 'NULL'}`
+              : displayValue(start + ri, ci) ?? 'NULL'"
+            @click="onCellClick($event, start + ri, ci)"
+            @pointerdown="onCellPointerDown($event, start + ri, ci)"
+            @pointerenter="onCellPointerEnter($event, start + ri, ci)"
+            @dblclick="onCellDblClick(start + ri, ci)"
+            @contextmenu="openCtx($event, start + ri, ci)"
           >
             <input
-              v-if="editCell && editCell.r === start + ri && editCell.c === c.i"
+              v-if="editCell && editCell.r === start + ri && editCell.c === ci"
               v-model="draft"
               class="cell-input mono"
-              :list="fkOpts && fkOpts.col === columns[c.i] ? 'fk-opts-dl' : undefined"
+              :list="fkOpts && fkOpts.col === columns[ci] ? 'fk-opts-dl' : undefined"
               :ref="focusEditEl"
               @keydown.enter.prevent="commitEdit"
               @keydown.esc.stop="cancelEdit"
-              @keydown.alt.enter.prevent="openMlEdit(start + ri, c.i)"
+              @keydown.alt.enter.prevent="openMlEdit(start + ri, ci)"
               @keydown.tab.prevent="moveEdit($event.shiftKey ? -1 : 1)"
               @blur="commitEdit"
             />
             <input
-              v-else-if="selEdit && selEdit.anchor === start + ri && selEdit.col === c.i"
+              v-else-if="selEdit && selEdit.anchor === start + ri && selEdit.col === ci"
               v-model="selDraft"
               class="cell-input mono sel-input"
               :placeholder="`批量填充 ${selEdit.rows.length} 行,↵ 提交`"
@@ -940,15 +915,15 @@ defineExpose({
               @blur="commitSelEdit"
             />
             <span
-              v-else-if="cellHasHit(start + ri, c.i) && !selPreviewing(start + ri, c.i)"
+              v-else-if="cellHasHit(start + ri, ci) && !selPreviewing(start + ri, ci)"
               class="cell-hl"
-              v-html="highlightCell(start + ri, c.i)"
+              v-html="highlightCell(start + ri, ci)"
             />
             <span
-              v-else-if="displayValue(start + ri, c.i) === null && !selPreviewing(start + ri, c.i)"
+              v-else-if="displayValue(start + ri, ci) === null && !selPreviewing(start + ri, ci)"
               class="null"
             >NULL</span>
-            <template v-else>{{ selPreviewing(start + ri, c.i) ? selDraft : displayCell(start + ri, c.i) }}</template>
+            <template v-else>{{ selPreviewing(start + ri, ci) ? selDraft : displayCell(start + ri, ci) }}</template>
           </div>
         </div>
         <div :style="{ height: Math.max(0, (rows.length - end) * ROW_H) + 'px' }" />
