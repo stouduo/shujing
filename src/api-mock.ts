@@ -48,7 +48,34 @@ function dateStr(i: number, base = '2024'): string {
   return `${base}-${m}-${d} ${String((i * 5) % 24).padStart(2, '0')}:${String((i * 11) % 60).padStart(2, '0')}:${String((i * 29) % 60).padStart(2, '0')}`
 }
 
+// 160 列宽表:专测列虚拟滚动(>60 列阈值)
+const WIDE_N = 160
+const wideColumns: { name: string; type: string; key?: string }[] = [
+  { name: 'id', type: 'INTEGER', key: 'PRI' },
+  ...Array.from({ length: WIDE_N - 1 }, (_, k) => ({
+    name: `metric_${String(k + 1).padStart(3, '0')}`,
+    type: k % 5 === 4 ? 'TEXT' : k % 3 === 2 ? 'DECIMAL(12,4)' : 'VARCHAR(64)',
+  })),
+]
+const wideDdl =
+  `CREATE TABLE \`wide_metrics\` (\n` +
+  wideColumns
+    .map((c) => `  \`${c.name}\` ${c.type}${c.key ? ' PRIMARY KEY' : ''}`)
+    .join(',\n') +
+  '\n);'
+
 const TABLES: MockTable[] = [
+  {
+    name: 'wide_metrics',
+    kind: 'table',
+    total: 500,
+    columns: wideColumns,
+    ddl: wideDdl,
+    row: (i) =>
+      wideColumns.map((_, c) =>
+        c === 0 ? String(i + 1) : c % 7 === 6 && seeded(i * 9 + c) > 0.6 ? null : `v${i + 1}_${c}`,
+      ),
+  },
   {
     name: 'users',
     kind: 'table',
