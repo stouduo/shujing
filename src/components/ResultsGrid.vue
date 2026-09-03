@@ -1070,6 +1070,7 @@ defineExpose({
   height: var(--row-h);
   background: var(--bg-head);
   border-bottom: 1px solid var(--border-strong);
+  transform: translateZ(0);
 }
 .row {
   position: relative;
@@ -1095,7 +1096,7 @@ defineExpose({
   z-index: 2;
 }
 .fixed-num {
-  box-shadow: 3px 0 6px -2px rgba(0, 0, 0, 0.35);
+  /* 原 box-shadow 阴影在垂直滚动时逐帧重绘(WKWebView 拖影源),分隔靠 border */
 }
 .row:hover {
   background: var(--row-hover);
