@@ -198,7 +198,7 @@ const REDIS_KEYS: Record<number, { key: string; type: string; value: string; pai
     { key: 'tags', type: 'set', value: '', pairs: [['', 'red'], ['', 'green'], ['', 'blue']], ttl: -1 },
   ],
   1: [
-    { key: 'db1:config', type: 'string', value: '{\"mode\":\"prod\",\"debug\":false}', pairs: [], ttl: -1 },
+    { key: 'db1:config', type: 'string', value: '{"mode":"prod","debug":false}', pairs: [], ttl: -1 },
   ],
 }
 let mockConns: ConnInfo[] = [
