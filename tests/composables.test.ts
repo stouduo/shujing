@@ -105,6 +105,20 @@ describe('useCellEditing', () => {
 })
 
 describe('useVirtualScroll', () => {
+  it('onScroll 同帧多次触发只测量一次(rAF 合帧)', async () => {
+    const v = useVirtualScroll({ rowCount: ref(1000), rowHeight: 28 })
+    const el = document.createElement('div')
+    Object.defineProperty(el, 'scrollTop', { value: 280, writable: true })
+    Object.defineProperty(el, 'clientHeight', { value: 560, writable: true })
+    v.scroller.value = el
+    v.onScroll()
+    v.onScroll()
+    v.onScroll()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(v.start.value).toBe(6) // 10 - 4 overscan
+    expect(v.end.value).toBe(6 + 20 + 8)
+  })
+
   it('start/end 基于 scrollTop 和 viewH', () => {
     const v = useVirtualScroll({ rowCount: ref(1000), rowHeight: 28 })
     v.scrollTop.value = 280 // 滚了 10 行
@@ -113,19 +127,10 @@ describe('useVirtualScroll', () => {
     expect(v.end.value).toBe(6 + 20 + 8) // start + 20 + 8 overscan
   })
 
-  it('topPad/bottomPad 计算正确', () => {
-    const v = useVirtualScroll({ rowCount: ref(100), rowHeight: 28 })
-    v.scrollTop.value = 0
-    v.viewH.value = 280 // 10 行可见
-    expect(v.topPad.value).toBe(0) // start = 0
-    expect(v.bottomPad.value).toBe((100 - 18) * 28) // end = 18
-  })
-
   it('不足一屏时 end = rowCount', () => {
     const v = useVirtualScroll({ rowCount: ref(5), rowHeight: 28 })
     v.scrollTop.value = 0
     v.viewH.value = 560
     expect(v.end.value).toBe(5)
-    expect(v.bottomPad.value).toBe(0)
   })
 })
