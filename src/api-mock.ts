@@ -392,10 +392,6 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       }
       return `CREATE FUNCTION fn_calc_total(p_user_id INT)\nRETURNS DECIMAL(12,2)\nDETERMINISTIC\nBEGIN\n  DECLARE total DECIMAL(12,2);\n  SELECT SUM(amount) INTO total FROM orders WHERE user_id = p_user_id;\n  RETURN IFNULL(total, 0);\nEND; -- ${name}` as T
     }
-    case 'count_rows': {
-      const t = findTable(args?.table as string)
-      return (t?.total ?? 0) as T
-    }
     case 'search_all_tables': {
       const kw = String(args?.keyword ?? '').toLowerCase()
       const max = Number(args?.maxHits ?? 50)
@@ -413,11 +409,6 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
         }
       }
       return hits satisfies SearchHit[] as T
-    }
-    case 'redis_databases': {
-      const dbs = Object.keys(REDIS_KEYS).map(Number)
-      if (!dbs.includes(0)) dbs.push(0)
-      return dbs.sort((a, b) => a - b).map((d) => [d, (REDIS_KEYS[d] ?? []).length]) as T
     }
     case 'redis_scan': {
       const db = Number(args?.db ?? 0)

@@ -1,5 +1,34 @@
 /** 共享辅助函数 */
-import type { DbType } from '../types'
+import type { ColumnSpec, ConnInfo, DbType, TableStructure } from '../types'
+
+/** HTML 转义(v-html 高亮等场景防注入) */
+export function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] as string,
+  )
+}
+
+export function dbTypeOf(conn: ConnInfo | undefined, fallback: DbType = 'mysql'): DbType {
+  return conn?.dbType ?? fallback
+}
+
+/** 表结构 → 设计器列定义(打开设计器与保存后刷新共用) */
+export function columnsFromStructure(st: TableStructure): ColumnSpec[] {
+  return st.columns.map((c) => {
+    const m = c.dataType.match(/^(\w+)\s*(?:\((\d+)(?:,\d+)?\))?/)
+    return {
+      name: c.name,
+      dataType: (m?.[1] ?? c.dataType).toUpperCase(),
+      length: m?.[2] ?? '',
+      nullable: c.nullable,
+      pk: c.key === 'PRI',
+      autoInc: /auto_increment|identity/i.test(c.extra) || /AUTOINCREMENT/.test(c.dataType),
+      default: c.default ?? '',
+      comment: c.comment,
+      existing: true,
+    }
+  })
+}
 
 export function quoteIdent(name: string, dbType: DbType): string {
   const q = dbType === 'mysql' ? '`' : '"'

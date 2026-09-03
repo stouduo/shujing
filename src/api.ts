@@ -40,7 +40,6 @@ export const listTables = (id: string, database?: string) =>
 export const getTableStructure = (id: string, table: string) =>
   call<TableStructure>('get_table_structure', { id, table })
 
-export const countRows = (id: string, table: string) => call<number>('count_rows', { id, table })
 
 export const listForeignKeys = (id: string) => call<FkMeta[]>('list_foreign_keys', { id })
 
@@ -48,7 +47,6 @@ export const getObjectDdl = (id: string, kind: string, name: string) =>
   call<string>('get_object_ddl', { id, kind, name })
 
 // ── Redis ────────────────────────────────────────────
-export const redisDatabases = (id: string) => call<[number, number][]>('redis_databases', { id })
 
 export const redisScan = (id: string, db: number, pattern: string, cursor: number, count = 200) =>
   call<[number, string[]]>('redis_scan', { id, db, pattern, cursor, count })

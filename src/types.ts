@@ -173,8 +173,6 @@ export interface ColumnSpec {
   autoInc: boolean
   default: string
   comment: string
-  /** 编辑模式下:是否本次新增(旧列参与 ALTER diff) */
-  isNew?: boolean
   /** 编辑模式下:原始列(存在 = 已有列) */
   existing?: boolean
 }

@@ -215,7 +215,6 @@ async function pickFile() {
           <n-input
             v-model:value="form.database"
             :placeholder="form.dbType === 'redis' ? '0 - 15,默认 0' : '连接后可浏览所有库'"
-            class={undefined}
           />
         </n-form-item>
       </template>

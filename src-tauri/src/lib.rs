@@ -111,13 +111,6 @@ async fn get_table_structure(
 }
 
 #[tauri::command]
-async fn count_rows(state: State<'_, AppState>, id: String, table: String) -> Result<u64, String> {
-    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
-    let mut guard = live.lock().await;
-    guard.backend.count_rows(&table).await
-}
-
-#[tauri::command]
 async fn list_foreign_keys(
     state: State<'_, AppState>,
     id: String,
@@ -274,13 +267,6 @@ async fn export_database_sql(
 }
 
 // ── Redis 专用命令 ────────────────────────────────────
-#[tauri::command]
-async fn redis_databases(state: State<'_, AppState>, id: String) -> Result<Vec<(u8, u64)>, String> {
-    let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
-    let mut guard = live.lock().await;
-    redis_ops::databases(&mut guard.backend).await
-}
-
 #[tauri::command]
 async fn redis_scan(
     state: State<'_, AppState>,
@@ -892,12 +878,10 @@ pub fn run() {
             list_tables,
             list_databases,
             get_table_structure,
-            count_rows,
             list_foreign_keys,
             export_table_sql,
             get_object_ddl,
             search_all_tables,
-            redis_databases,
             redis_scan,
             redis_key_types,
             redis_set_ttl,

@@ -3,17 +3,14 @@ import { markRaw } from 'vue'
 import * as api from '../api'
 import { reviveTab, serializeTab } from '../panes/registry'
 import { tableActions } from './tableActions'
-import { quoteIdent, histSql } from './helpers'
-import type { ColumnSpec, ConnInfo, DbType, TableMeta, TableTab, Tab } from '../types'
+import { designerActions } from './designerActions'
+import { quoteIdent, histSql, dbTypeOf, columnsFromStructure } from './helpers'
+import type { ConnInfo, TableMeta, TableTab, Tab } from '../types'
 
 interface LiveState {
   tables: TableMeta[]
   loading: boolean
   version: string
-}
-
-function dbTypeOf(conn: ConnInfo | undefined, fallback: DbType = 'mysql'): DbType {
-  return conn?.dbType ?? fallback
 }
 
 // ── 会话持久化 ────────────────────────────────────────
@@ -59,6 +56,7 @@ export const useAppStore = defineStore('app', {
   },
   actions: {
     ...tableActions,
+    ...designerActions,
     async init() {
       try {
         this.history = JSON.parse(localStorage.getItem('dblens_history') ?? '[]')
@@ -115,7 +113,7 @@ export const useAppStore = defineStore('app', {
       }
       if (!raw) return false
       try {
-        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+         
         const d = JSON.parse(raw) as any
         if (d?.v !== 1 || !Array.isArray(d.tabs) || !d.tabs.length) return false
         // 恢复各连接最近使用的库(仅接受新版格式,旧数据可能被默认选库策略污染)
@@ -191,20 +189,7 @@ export const useAppStore = defineStore('app', {
       if (!tab || tab.kind !== 'designer' || !tab.connId) return
       try {
         const st = await api.getTableStructure(tab.connId, tab.tableName)
-        tab.columns = st.columns.map((c) => {
-          const m = c.dataType.match(/^(\w+)\s*(?:\((\d+)(?:,\d+)?\))?/)
-          return {
-            name: c.name,
-            dataType: (m?.[1] ?? c.dataType).toUpperCase(),
-            length: m?.[2] ?? '',
-            nullable: c.nullable,
-            pk: c.key === 'PRI',
-            autoInc: /auto_increment|identity/i.test(c.extra),
-            default: c.default ?? '',
-            comment: c.comment,
-            existing: true,
-          } satisfies ColumnSpec
-        })
+        tab.columns = columnsFromStructure(st)
       } catch {
         /* 恢复失败保持空,用户可关闭标签 */
       }
@@ -753,189 +738,6 @@ export const useAppStore = defineStore('app', {
       }
     },
 
-    // ── 表设计器(建表/改表) ──────────────────────────
-
-    async openDesigner(connId: string, table?: string) {
-      if (!this.live[connId]) await this.connect(connId)
-      const id = this.nextId()
-      if (table) {
-        this.pushTab({
-          id,
-          kind: 'designer',
-          mode: 'edit',
-          title: `设计 ${table}`,
-          connId,
-          tableName: table,
-          columns: [],
-          saving: false,
-          error: null,
-          info: null,
-        })
-        // 拉现有结构转列定义
-        try {
-          const st = await api.getTableStructure(connId, table)
-          const tab = this.tabs.find((t) => t.id === id)
-          if (tab && tab.kind === 'designer') {
-            tab.columns = st.columns.map((c) => {
-              const m = c.dataType.match(/^(\w+)\s*(?:\((\d+)(?:,\d+)?\))?/)
-              return {
-                name: c.name,
-                dataType: (m?.[1] ?? c.dataType).toUpperCase(),
-                length: m?.[2] ?? '',
-                nullable: c.nullable,
-                pk: c.key === 'PRI',
-                autoInc: /auto_increment|identity/i.test(c.extra) || /AUTOINCREMENT/.test(c.dataType),
-                default: c.default ?? '',
-                comment: c.comment,
-                existing: true,
-              } satisfies ColumnSpec
-            })
-          }
-        } catch (e) {
-          const tab = this.tabs.find((t) => t.id === id)
-          if (tab && tab.kind === 'designer') tab.error = String(e)
-        }
-      } else {
-        this.pushTab({
-          id,
-          kind: 'designer',
-          mode: 'create',
-          title: `新表 ${this.tabSeq}`,
-          connId,
-          tableName: '',
-          columns: [
-            { name: 'id', dataType: 'INTEGER', length: '', nullable: false, pk: true, autoInc: true, default: '', comment: '' },
-          ],
-          saving: false,
-          error: null,
-          info: null,
-        })
-      }
-    },
-
-    /** 生成设计器将要执行的 SQL(预览与保存共用) */
-    designerSql(id: string): { create?: string; alters: string[]; warnings: string[] } {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'designer' || !tab.connId) return { alters: [], warnings: [] }
-      const conn = this.connById(tab.connId)
-      const dbType = dbTypeOf(conn)
-      const q = (s: string) => quoteIdent(s, dbType)
-      const qt = q(tab.tableName.trim())
-      const warnings: string[] = []
-
-      const typeOf = (c: ColumnSpec): string => {
-        let t = c.dataType.toUpperCase()
-        if (c.autoInc && dbType === 'postgres') {
-          t = 'SERIAL'
-          return t
-        }
-        if (c.length) t += `(${c.length})`
-        return t
-      }
-      const colDef = (c: ColumnSpec): string => {
-        let s = `${q(c.name)} ${typeOf(c)}`
-        if (c.autoInc && dbType === 'mysql') s += ' AUTO_INCREMENT'
-        if (!c.nullable && !(c.pk && c.autoInc && dbType === 'sqlite')) s += ' NOT NULL'
-        if (c.default) s += ` DEFAULT ${/^-?\d+(\.\d+)?$/.test(c.default) ? c.default : `'${c.default.replace(/'/g, "''")}'`}`
-        if (c.comment && dbType === 'mysql') s += ` COMMENT '${c.comment.replace(/'/g, "''")}'`
-        return s
-      }
-
-      if (tab.mode === 'create') {
-        const cols = tab.columns.map(colDef)
-        const pks = tab.columns.filter((c) => c.pk)
-        if (pks.length > 1) cols.push(`PRIMARY KEY (${pks.map((c) => q(c.name)).join(', ')})`)
-        return { create: `CREATE TABLE ${qt} (\n  ${cols.join(',\n  ')}\n);`, alters: [], warnings }
-      }
-
-      // 编辑模式:diff 生成 ALTER
-      const alters: string[] = []
-      const existing = tab.columns.filter((c) => c.existing)
-      const added = tab.columns.filter((c) => !c.existing)
-      const removedNames = new Set(tab.columns.filter((c) => c.existing).map((c) => c.name))
-      // 删除的列:无法从当前列推断原始全集 —— 编辑模式不提供删除已有列的 diff(见 UI 禁用)
-      for (const c of added) {
-        alters.push(`ALTER TABLE ${qt} ADD COLUMN ${colDef({ ...c, pk: false, autoInc: false })};`)
-      }
-      for (const c of existing) {
-        const full = colDef(c)
-        if (dbType === 'mysql') {
-          alters.push(`ALTER TABLE ${qt} MODIFY COLUMN ${full};`)
-        } else if (dbType === 'postgres') {
-          alters.push(`ALTER TABLE ${qt} ALTER COLUMN ${q(c.name)} TYPE ${typeOf(c)};`)
-          alters.push(`ALTER TABLE ${qt} ALTER COLUMN ${q(c.name)} ${c.nullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`)
-        } else {
-          // SQLite 不支持修改已有列
-          warnings.push(`SQLite 无法修改已有列「${c.name}」,已跳过`)
-        }
-      }
-      if (removedNames.size === 0 && added.length === 0 && existing.length === 0) {
-        warnings.push('没有可保存的变更')
-      }
-      return { alters, warnings }
-    },
-
-    async saveDesigner(id: string) {
-      const tab = this.tabs.find((t) => t.id === id)
-      if (!tab || tab.kind !== 'designer' || !tab.connId) return
-      if (!tab.tableName.trim()) {
-        tab.error = '请填写表名'
-        return
-      }
-      if (!tab.columns.length) {
-        tab.error = '至少需要一个字段'
-        return
-      }
-      if (tab.columns.some((c) => !c.name.trim())) {
-        tab.error = '存在未命名字段'
-        return
-      }
-      const { create, alters, warnings } = this.designerSql(id)
-      tab.saving = true
-      tab.error = null
-      tab.info = null
-      try {
-        if (create) {
-          await api.runSql(tab.connId, create, 1)
-          tab.info = `表 ${tab.tableName} 创建成功`
-        } else if (alters.length) {
-          for (const stmt of alters) {
-            await api.runSql(tab.connId, stmt, 1)
-          }
-          tab.info = `已执行 ${alters.length} 条 ALTER 语句`
-        }
-        if (warnings.length) {
-          tab.info = (tab.info ? tab.info + ' · ' : '') + warnings.join(';')
-        }
-        if (tab.connId) this.refreshTables(tab.connId)
-        // 编辑模式刷新列快照,避免重复执行 ALTER
-        if (tab.mode === 'edit') {
-          try {
-            const st = await api.getTableStructure(tab.connId, tab.tableName)
-            tab.columns = st.columns.map((c) => {
-              const m = c.dataType.match(/^(\w+)\s*(?:\((\d+)(?:,\d+)?\))?/)
-              return {
-                name: c.name,
-                dataType: (m?.[1] ?? c.dataType).toUpperCase(),
-                length: m?.[2] ?? '',
-                nullable: c.nullable,
-                pk: c.key === 'PRI',
-                autoInc: /auto_increment|identity/i.test(c.extra),
-                default: c.default ?? '',
-                comment: c.comment,
-                existing: true,
-              } satisfies ColumnSpec
-            })
-          } catch {
-            /* 刷新失败不影响结果提示 */
-          }
-        }
-      } catch (e) {
-        tab.error = String(e)
-      } finally {
-        tab.saving = false
-      }
-    },
 
     closeTab(id: string) {
       const idx = this.tabs.findIndex((t) => t.id === id)

@@ -6,6 +6,7 @@ import { useVirtualScroll } from '../composables/useVirtualScroll'
 import { useCellEditing } from '../composables/useCellEditing'
 import { useContextMenus } from '../composables/useContextMenus'
 import { useVirtualizer } from '@tanstack/vue-virtual'
+import { escapeHtml } from '../stores/helpers'
 import type { OrderDir } from '../types'
 
 const props = defineProps<{
@@ -238,12 +239,6 @@ watch([searchApplied], () => {
   const first = searchList.value[0]
   if (first !== undefined) scrollToRow(first)
 })
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (ch) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] as string,
-  )
-}
 
 /** 该格是否命中搜索词(用于高亮渲染) */
 function cellHasHit(r: number, c: number): boolean {
@@ -1066,11 +1061,13 @@ defineExpose({
 .inner {
   position: relative;
 }
+/* 表头:垂直 sticky 贴顶;display:block,单元格与数据行同为绝对定位模型 */
 .head {
   position: sticky;
   top: 0;
-  z-index: 2;
-  display: flex;
+  z-index: 3;
+  display: block;
+  height: var(--row-h);
   background: var(--bg-head);
   border-bottom: 1px solid var(--border-strong);
 }
@@ -1086,13 +1083,6 @@ defineExpose({
 .cell {
   position: absolute;
   top: 0;
-}
-.head {
-  position: sticky;
-  top: 0;
-  display: block;
-  height: var(--row-h);
-  z-index: 3;
 }
 .head-cell {
   position: absolute;
@@ -1216,6 +1206,7 @@ defineExpose({
   cursor: pointer;
 }
 .head-cell {
+  /* 定位(top/height)在布局段定义,此处仅表头专属观感 */
   display: flex;
   align-items: center;
   gap: 4px;
