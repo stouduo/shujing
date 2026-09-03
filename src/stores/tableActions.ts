@@ -7,7 +7,6 @@ import * as api from '../api'
 import { quoteIdent, tableRef } from './helpers'
 import type { TableTab, Tab } from '../types'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Store = any
 
 export const tableActions = {

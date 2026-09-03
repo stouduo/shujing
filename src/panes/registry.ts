@@ -24,7 +24,6 @@ export interface PaneDef {
   revive?: (st: Record<string, unknown>) => Tab | null
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 function num(v: unknown, d = 0): number {
   return typeof v === 'number' ? v : d
 }
