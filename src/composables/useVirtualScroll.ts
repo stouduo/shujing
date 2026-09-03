@@ -2,8 +2,9 @@
  * 虚拟滚动组合式:只计算可见窗口的行偏移
  * 从 ResultsGrid 抽出的纯逻辑,便于单测。
  *
- * scroll 事件用 rAF 合帧:高频滚动(触控板/滚轮一帧多次)只测量一次,
- * 避免同一帧内重复触发响应式更新与渲染。
+ * 必须在 scroll 事件里同步测量:rAF 延迟会让行窗口比合成器滚动慢一帧,
+ * 快速滑动时边缘出现滞后拖影。重复测量无开销——ref 同值不触发更新,
+ * 同帧多次渲染也由 Vue 调度器天然去重。
  */
 import { computed, onMounted, onUnmounted, ref, type Ref } from 'vue'
 
@@ -32,14 +33,8 @@ export function useVirtualScroll(opts: Options) {
     viewH.value = el.clientHeight
   }
 
-  let rafId = 0
-
   function onScroll() {
-    if (rafId) return
-    rafId = requestAnimationFrame(() => {
-      rafId = 0
-      measure()
-    })
+    measure()
   }
 
   onMounted(() => {
@@ -48,7 +43,6 @@ export function useVirtualScroll(opts: Options) {
   })
   onUnmounted(() => {
     window.removeEventListener('resize', onScroll)
-    if (rafId) cancelAnimationFrame(rafId)
   })
 
   const start = computed(() =>
