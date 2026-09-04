@@ -32,9 +32,10 @@ describe('侧栏搜索:单库', () => {
     const store = useAppStore(pinia)
     await new Promise((r) => setTimeout(r, 120))
 
+    // 等连接列表渲染(loadSaved 带 mock 延迟,并行跑时更慢)
+    expect(await waitFor(() => !!el.querySelector('.conn .row')), '连接列表渲染').toBe(true)
+
     // 展开示例 SQLite 连接(单库路径)
-    ;(el.querySelector('.conn') as any)?.__vueParentComponent?.setupState
-    // 通过组件实例展开不可靠,直接调 store 连接 + 手动设置展开状态
     await store.connect('mock-sqlite')
 
     const names = () =>
