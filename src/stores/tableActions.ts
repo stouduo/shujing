@@ -98,6 +98,8 @@ export const tableActions = {
     tab.changes = {}
     tab.deletedRows = {}
     tab.newRows = []
+    // 勾选按页内行号记录,数据一换行号语义就变:残留会把导出/复制引到错误行
+    tab.checkedRows = {}
     try {
       const results = await api.runSql(tab.connId, this.tablePageSql(tab), tab.pageSize)
       if (seq !== tab.loadSeq) return

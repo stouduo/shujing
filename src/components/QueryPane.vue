@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, ref, watch, onUnmounted } from 'vue'
 import { NButton, NDropdown, NInput, NSelect, NSplit, useMessage, type DropdownOption } from 'naive-ui'
 import * as api from '../api'
 import { useAppStore } from '../stores/app'
@@ -319,6 +319,43 @@ watch(viewIdx, (idx) => {
   if (at < 0) selectedSrc = null
 })
 
+// ── 未保存编辑以"原始行号"为键(重排/筛选不会张冠李戴);渲染时映射回显示位 ──
+/** 显示位 → 原始行号 */
+function srcOfDisp(r: number): number {
+  return viewIdx.value?.[r] ?? r
+}
+
+/** 反向映射(原始行号 → 显示位);未加工时为 null(键即显示位) */
+const dispOfSrc = computed(() => {
+  const idx = viewIdx.value
+  if (!idx) return null
+  const m = new Map<number, number>()
+  idx.forEach((src, disp) => m.set(src, disp))
+  return m
+})
+
+const eqChangesView = computed(() => {
+  const m = dispOfSrc.value
+  if (!m) return eqChanges.value
+  const out: Record<number, Record<string, string | null>> = {}
+  for (const [src, sets] of Object.entries(eqChanges.value)) {
+    const disp = m.get(Number(src))
+    if (disp !== undefined) out[disp] = sets
+  }
+  return out
+})
+
+const eqDeletedView = computed(() => {
+  const m = dispOfSrc.value
+  if (!m) return eqDeleted.value
+  const out: Record<number, true> = {}
+  for (const src of Object.keys(eqDeleted.value)) {
+    const disp = m.get(Number(src))
+    if (disp !== undefined) out[disp] = true
+  }
+  return out
+})
+
 /** 小结果集阈值:以内走主线程同步计算,免 Worker 往返 */
 const SYNC_MAX = 20000
 
@@ -371,6 +408,12 @@ watch(
   () => scheduleProcess(),
   { immediate: true },
 )
+
+// 组件被 KeepAlive 挤出销毁时终止 Worker 线程(切标签 deactivate 不销毁,不受影响)
+onUnmounted(() => {
+  vpWorker?.terminate()
+  vpWorker = null
+})
 
 const viewResult = computed(() => {
   const r = activeResult.value
@@ -706,20 +749,22 @@ async function applyHistory(key: string | number) {
                   :sort-dir="memSort.dir"
                   :selected-row="selectedRow"
                   :editable="eqEditable"
-                  :changes="eqChanges"
-                  :deleted-rows="eqDeleted"
+                  :changes="eqChangesView"
+                  :deleted-rows="eqDeletedView"
                   :table-name="editableQuery ?? undefined"
                   :mysql-dialect="dialect === 'mysql'"
                   :col-comments="eqColComments"
                   @sort="onMemSort"
                   @select-row="(r: number) => selectRow(selectedRow === r ? null : r)"
                   @cell-change="(r: number, c: string, v: string | null) => {
-                    if (!eqChanges[r]) eqChanges[r] = {}
-                    eqChanges[r][c] = v
+                    const src = srcOfDisp(r)
+                    if (!eqChanges[src]) eqChanges[src] = {}
+                    eqChanges[src][c] = v
                   }"
                   @delete-row="(r: number) => {
-                    if (eqDeleted[r]) delete eqDeleted[r]
-                    else eqDeleted[r] = true
+                    const src = srcOfDisp(r)
+                    if (eqDeleted[src]) delete eqDeleted[src]
+                    else eqDeleted[src] = true
                   }"
                   @batch-committed="() => eqSave()"
                 />
@@ -729,7 +774,7 @@ async function applyHistory(key: string | number) {
                 :columns="activeResult.columns"
                 :rows="viewResult.rows"
                 :row-index="selectedRow"
-                :global-no="selectedRow + 1"
+                :global-no="srcOfDisp(selectedRow) + 1"
                 @close="selectRow(null)"
               />
             </div>
