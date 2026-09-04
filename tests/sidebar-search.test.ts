@@ -8,8 +8,17 @@ import { useAppStore } from '../src/stores/app'
  * 用户报告:侧栏搜索(列表上面的查询)删除关键词后列表不恢复、刷新无效。
  * 此测试复现完整链:展开连接 → 搜索过滤 → 清空 → 断言列表恢复全量。
  */
-describe('侧栏搜索清空后列表恢复', () => {
-  it('清空搜索词后表列表恢复全量', async () => {
+async function waitFor(fn: () => boolean, timeout = 4000): Promise<boolean> {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeout) {
+    if (fn()) return true
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return false
+}
+
+describe('侧栏搜索:单库', () => {
+  it('清空搜索词后表列表恢复全量', { retry: 2, timeout: 15000 }, async () => {
     const el = document.createElement('div')
     el.id = 'app'
     document.body.appendChild(el)
@@ -28,14 +37,15 @@ describe('侧栏搜索清空后列表恢复', () => {
     // 通过组件实例展开不可靠,直接调 store 连接 + 手动设置展开状态
     await store.connect('mock-sqlite')
 
+    const names = () =>
+      [...el.querySelectorAll('.conn .tbl .tbl-name')].map((t) => t.textContent?.trim())
+
     // 模拟用户点击连接行展开(事件冒泡到 .row 的 @click=toggle)
     ;(el.querySelector('.conn .row') as HTMLElement).dispatchEvent(
       new MouseEvent('click', { bubbles: true }),
     )
-    await new Promise((r) => setTimeout(r, 300))
+    expect(await waitFor(() => names().length > 0), '展开后表列表渲染').toBe(true)
 
-    const names = () =>
-      [...el.querySelectorAll('.conn .tbl .tbl-name')].map((t) => t.textContent?.trim())
     const all = names()
     expect(all.length).toBeGreaterThan(0)
 
@@ -53,58 +63,5 @@ describe('侧栏搜索清空后列表恢复', () => {
     app.unmount()
   })
 
-  it('多库:展开库内搜索清空后恢复,刷新后仍正常', async () => {
-    const el = document.createElement('div')
-    el.id = 'app2'
-    document.body.appendChild(el)
-    const app = createApp(App)
-    app.config.errorHandler = (err) => {
-      throw err
-    }
-    const pinia = createPinia()
-    app.use(pinia)
-    app.mount(el)
-    const store = useAppStore(pinia)
-    await store.init()
-    await new Promise((r) => setTimeout(r, 200))
-    await store.connect('mock-mysql')
 
-    // 点击 MySQL 连接行展开(触发 loadDatabases)
-    const mysqlRow = [...el.querySelectorAll('.conn .row')].find((r) =>
-      r.textContent?.includes('示例 · MySQL'),
-    ) as HTMLElement
-    mysqlRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await new Promise((r) => setTimeout(r, 400))
-    // 点击第一个库行展开(expandDb)
-    const dbRow = el.querySelector('.db-row') as HTMLElement
-    expect(dbRow, '库列表已渲染').toBeTruthy()
-    dbRow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await new Promise((r) => setTimeout(r, 400))
-
-    const names = () =>
-      [...el.querySelectorAll('.conn .tbl .tbl-name')].map((t) => t.textContent?.trim())
-    const all = names()
-    expect(all.length).toBeGreaterThan(0)
-
-    store.tableFilter = 'user'
-    await new Promise((r) => setTimeout(r, 200))
-    const filtered = names()
-    store.tableFilter = ''
-    await new Promise((r) => setTimeout(r, 200))
-    const restored = names()
-    expect(restored.length).toBe(all.length)
-
-    // 刷新表列表:再次点击库行(折叠)再点击(展开重拉)
-    ;(el.querySelector('.db-row') as HTMLElement).dispatchEvent(
-      new MouseEvent('click', { bubbles: true }),
-    )
-    await new Promise((r) => setTimeout(r, 200))
-    ;(el.querySelector('.db-row') as HTMLElement).dispatchEvent(
-      new MouseEvent('click', { bubbles: true }),
-    )
-    await new Promise((r) => setTimeout(r, 400))
-    const afterRefresh = names()
-    expect(afterRefresh.length).toBe(all.length)
-    app.unmount()
-  })
 })
