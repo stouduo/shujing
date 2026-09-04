@@ -303,6 +303,22 @@ let vpWorker: Worker | null = null
 /** null = 未探测;false = Worker 不可用(回退主线程) */
 let vpWorkerOk: boolean | null = null
 
+/** 选中行的原始行号:内存排序/筛选只改显示顺序,行身份不变,据此在重排后找回 */
+let selectedSrc: number | null = null
+
+function selectRow(r: number | null) {
+  selectedRow.value = r
+  selectedSrc = r === null ? null : viewIdx.value?.[r] ?? r
+}
+
+// 内存排序/筛选完成:按原始行号找回选中行(行被筛掉则关闭详情)
+watch(viewIdx, (idx) => {
+  if (selectedSrc === null) return
+  const at = idx ? idx.indexOf(selectedSrc) : selectedSrc
+  selectedRow.value = at >= 0 ? at : null
+  if (at < 0) selectedSrc = null
+})
+
 /** 小结果集阈值:以内走主线程同步计算,免 Worker 往返 */
 const SYNC_MAX = 20000
 
@@ -383,6 +399,7 @@ watch(
     memFilterApplied.value = ''
     memSort.value = { key: null, dir: 'asc' }
     selectedRow.value = null
+    selectedSrc = null
     viewIdx.value = null
   },
 )
@@ -695,7 +712,7 @@ async function applyHistory(key: string | number) {
                   :mysql-dialect="dialect === 'mysql'"
                   :col-comments="eqColComments"
                   @sort="onMemSort"
-                  @select-row="(r: number) => (selectedRow = selectedRow === r ? null : r)"
+                  @select-row="(r: number) => selectRow(selectedRow === r ? null : r)"
                   @cell-change="(r: number, c: string, v: string | null) => {
                     if (!eqChanges[r]) eqChanges[r] = {}
                     eqChanges[r][c] = v
@@ -713,7 +730,7 @@ async function applyHistory(key: string | number) {
                 :rows="viewResult.rows"
                 :row-index="selectedRow"
                 :global-no="selectedRow + 1"
-                @close="selectedRow = null"
+                @close="selectRow(null)"
               />
             </div>
           </template>

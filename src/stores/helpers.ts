@@ -8,6 +8,21 @@ export function escapeHtml(s: string): string {
   )
 }
 
+/** 行的主键指纹(主键列值拼接;无有效主键列时返回 null) */
+export function pkFingerprint(row: (string | null)[], pkIdxs: number[]): string | null {
+  if (!row || !pkIdxs.length) return null
+  return pkIdxs.map((i) => row[i] ?? '').join('\u0000')
+}
+
+/** 在新行集合中按指纹定位行号(排序后找回同一行;不在集合返回 -1) */
+export function locateByFingerprint(
+  rows: (string | null)[][],
+  pkIdxs: number[],
+  fingerprint: string,
+): number {
+  return rows.findIndex((row) => pkFingerprint(row, pkIdxs) === fingerprint)
+}
+
 export function dbTypeOf(conn: ConnInfo | undefined, fallback: DbType = 'mysql'): DbType {
   return conn?.dbType ?? fallback
 }

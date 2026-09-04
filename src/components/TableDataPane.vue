@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { pkFingerprint, locateByFingerprint } from '../stores/helpers'
 import { computed, onMounted, ref, watch } from 'vue'
 import { NButton, NInput, NPopover, NSelect, NSpin, useMessage } from 'naive-ui'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
@@ -19,12 +20,32 @@ const props = defineProps<{ tab: TableTab }>()
 const store = useAppStore()
 const message = useMessage()
 
-// 行选中(记录详情);数据变化/翻页后失效
+// 行选中(记录详情)。存主键指纹:排序后同一行仍在(重定位跟随),
+// 翻页/筛选后行不在了(找不到指纹)才关闭。无主键的表退回旧行为。
 const selectedRow = ref<number | null>(null)
+let selectedPk: string | null = null
+
+function pkIdxsOf(result: NonNullable<TableTab['result']>): number[] {
+  return props.tab.pkCols.map((c) => result.columns.indexOf(c)).filter((i) => i >= 0)
+}
+
+function selectRow(r: number | null) {
+  selectedRow.value = r
+  selectedPk = null
+  if (r === null || !props.tab.result) return
+  const idxs = pkIdxsOf(props.tab.result)
+  selectedPk = pkFingerprint(props.tab.result.rows[r] ?? [], idxs)
+}
+
 watch(
   () => [props.tab.result, props.tab.page] as const,
-  () => {
-    selectedRow.value = null
+  ([result]) => {
+    if (selectedRow.value === null || !selectedPk || !result) {
+      selectedRow.value = null
+      return
+    }
+    const at = locateByFingerprint(result.rows, pkIdxsOf(result), selectedPk)
+    selectedRow.value = at >= 0 ? at : null
   },
 )
 
@@ -449,7 +470,7 @@ function onFilterCol(col: string, op = '=') {
             @delete-row="(r: number) => store.deleteRow(tab.id, r)"
             @insert-change="(i: number, c: string, v: string) => store.setInsertChange(tab.id, i, c, v)"
             @remove-insert="(i: number) => store.removeInsertRow(tab.id, i)"
-            @select-row="(r: number) => (selectedRow = selectedRow === r ? null : r)"
+            @select-row="(r: number) => selectRow(selectedRow === r ? null : r)"
             @filter-col="(c: string, op?: string) => onFilterCol(c, op ?? '=')"
             @check-row="(r: number, v: boolean) => store.toggleCheck(tab.id, r, v)"
             @check-page="(all: boolean) => store.checkPage(tab.id, all)"
@@ -465,7 +486,7 @@ function onFilterCol(col: string, op = '=') {
           :row-index="selectedRow"
           :global-no="(tab.page - 1) * tab.pageSize + selectedRow + 1"
           :changes="tab.changes"
-          @close="selectedRow = null"
+          @close="selectRow(null)"
         />
       </template>
       <div v-else class="empty">暂无数据</div>
