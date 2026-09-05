@@ -9,6 +9,9 @@ declare module "*.vue" {
 declare global {
   interface Window {
     $msg?: { success: (m: string) => void; info: (m: string) => void; warning: (m: string) => void; error: (m: string) => void }
+    $dialog?: {
+      warning: (opts: { title: string; content: string; positiveText: string; negativeText: string; onPositiveClick: () => void }) => void
+    }
   }
 }
 export {}

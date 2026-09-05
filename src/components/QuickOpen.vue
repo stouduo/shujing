@@ -172,7 +172,8 @@ async function execSql(sql: string) {
   const connId = targetConn()
   if (!connId) return
   store.openQueryTab(connId)
-  const tab = store.tabs[store.tabs.length - 1]
+  // 去重定位/新建都会激活目标标签;取最后一个标签在复用场景会拿错
+  const tab = store.tabs.find((t) => t.id === store.activeTabId)
   if (tab?.kind === 'query') {
     tab.sql = sql
     emit('update:show', false)
@@ -183,7 +184,8 @@ async function execSql(sql: string) {
 async function openWithFilter(item: Item, cond: string) {
   emit('update:show', false)
   await store.openTable(item.connId, item.table)
-  const tab = store.tabs[store.tabs.length - 1]
+  // 同上:openTable 可能去重激活已有标签,不一定在末尾
+  const tab = store.tabs.find((t) => t.id === store.activeTabId)
   if (tab?.kind !== 'table') return
   const cols = tab.result?.columns ?? []
   const m = cond.match(/^(\w+)\s*=\s*(.+)$/)

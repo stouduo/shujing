@@ -456,9 +456,9 @@ function openEdit(info: ConnInfo) {
 
 <template>
   <n-config-provider :theme="theme === 'dark' ? darkTheme : null" :theme-overrides="themeOverrides" style="height: 100%">
-    <n-message-provider>
-      <MessageBridge />
-      <n-dialog-provider>
+    <n-dialog-provider>
+      <n-message-provider>
+        <MessageBridge />
         <div class="app-shell">
           <!-- 多根组件不吃属性透传,宽度套在宿主容器上 -->
           <div class="sidebar-host" :style="{ width: sidebarW + 'px' }">
@@ -651,8 +651,8 @@ function openEdit(info: ConnInfo) {
         </Teleport>
         <QuickOpen v-model:show="showQuickOpen" />
         <GlobalSearchModal v-model:show="showGlobalSearch" />
-      </n-dialog-provider>
-    </n-message-provider>
+      </n-message-provider>
+    </n-dialog-provider>
   </n-config-provider>
 </template>
 

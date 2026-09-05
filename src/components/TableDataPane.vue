@@ -192,9 +192,52 @@ const pageSizeOptions = [
   { label: '1000 行/页', value: 1000 },
 ]
 
+function unsavedCount(): number {
+  const c = store.changeCount(props.tab.id)
+  return c.edits + c.deletes + c.inserts
+}
+
+/** 有未保存修改时,翻页/排序/刷新/改筛选会丢弃它们——先确认再执行 */
+function guardUnsaved(fn: () => void) {
+  const n = unsavedCount()
+  if (!n) {
+    fn()
+    return
+  }
+  window.$dialog?.warning({
+    title: '有未保存的修改',
+    content: `当前有 ${n} 处未保存的修改,继续将丢弃这些修改。`,
+    positiveText: '丢弃并继续',
+    negativeText: '取消',
+    onPositiveClick: () => fn(),
+  })
+}
+
 function refresh() {
-  store.loadTableData(props.tab.id)
-  store.loadTableCount(props.tab.id)
+  guardUnsaved(() => {
+    store.loadTableData(props.tab.id)
+    store.loadTableCount(props.tab.id)
+  })
+}
+
+function gotoPage(p: number) {
+  guardUnsaved(() => store.setTablePage(props.tab.id, p))
+}
+
+function changePageSize(v: number) {
+  guardUnsaved(() => store.setTablePageSize(props.tab.id, v))
+}
+
+function onSort(col: string, dir?: 'asc' | 'desc' | null) {
+  guardUnsaved(() => store.sortTable(props.tab.id, col, dir))
+}
+
+function applyFiltersGuarded() {
+  guardUnsaved(() => store.applyFilters(props.tab.id))
+}
+
+function clearFiltersGuarded() {
+  guardUnsaved(() => store.clearFilters(props.tab.id))
 }
 
 function openStructure() {
@@ -370,7 +413,7 @@ function onFilterCol(col: string, op = '=') {
         </div>
         <template v-if="tab.filterMode === 'fields'">
           <n-button size="tiny" quaternary @click="store.addFilter(tab.id)">＋ 添加条件</n-button>
-          <n-button v-if="tab.filters.length" size="tiny" quaternary @click="store.clearFilters(tab.id)">
+          <n-button v-if="tab.filters.length" size="tiny" quaternary @click="clearFiltersGuarded">
             清除全部
           </n-button>
           <n-button
@@ -379,14 +422,14 @@ function onFilterCol(col: string, op = '=') {
             type="primary"
             secondary
             :loading="tab.loading"
-            @click="store.applyFilters(tab.id)"
+            @click="applyFiltersGuarded"
           >
             应用
           </n-button>
         </template>
         <template v-else>
-          <n-button size="tiny" type="primary" secondary :loading="tab.loading" @click="store.applyFilters(tab.id)">应用</n-button>
-          <n-button size="tiny" quaternary @click="() => { tab.freeWhere = ''; store.applyFilters(tab.id) }">清除</n-button>
+          <n-button size="tiny" type="primary" secondary :loading="tab.loading" @click="applyFiltersGuarded">应用</n-button>
+          <n-button size="tiny" quaternary @click="clearFiltersGuarded">清除</n-button>
         </template>
         <span class="f-count" v-if="tab.total !== null">匹配 {{ tab.total.toLocaleString() }} 行</span>
         <button class="f-close" title="收起筛选栏" @click="showFilterBar = false">×</button>
@@ -465,7 +508,7 @@ function onFilterCol(col: string, op = '=') {
             :mysql-dialect="store.connById(tab.connId ?? '')?.dbType === 'mysql'"
             :row-height="rowHeight"
             :col-comments="tab.colComments ?? {}"
-            @sort="(col: string, dir?: 'asc' | 'desc' | null) => store.sortTable(tab.id, col, dir)"
+            @sort="onSort"
             @cell-change="(r: number, c: string, v: string | null) => store.setCellChange(tab.id, r, c, v)"
             @delete-row="(r: number) => store.deleteRow(tab.id, r)"
             @insert-change="(i: number, c: string, v: string) => store.setInsertChange(tab.id, i, c, v)"
@@ -540,7 +583,7 @@ function onFilterCol(col: string, op = '=') {
           size="tiny"
           :options="pageSizeOptions"
           class="page-size"
-          @update:value="(v: number) => store.setTablePageSize(tab.id, v)"
+          @update:value="changePageSize"
         />
         <span v-if="rangeText" class="range">第 {{ rangeText }} 行</span>
       </div>
@@ -553,7 +596,7 @@ function onFilterCol(col: string, op = '=') {
           size="tiny"
           quaternary
           :disabled="tab.page <= 1 || tab.loading"
-          @click="store.setTablePage(tab.id, tab.page - 1)"
+          @click="gotoPage(tab.page - 1)"
         >
           ‹ 上一页
         </n-button>
@@ -568,7 +611,7 @@ function onFilterCol(col: string, op = '=') {
             (totalPages !== null && tab.page >= totalPages) ||
             (tab.result !== null && tab.result.rows.length < tab.pageSize)
           "
-          @click="store.setTablePage(tab.id, tab.page + 1)"
+          @click="gotoPage(tab.page + 1)"
         >
           下一页 ›
         </n-button>
