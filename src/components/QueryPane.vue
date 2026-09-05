@@ -40,15 +40,22 @@ function extractParams(sql: string): string[] {
   return [...params]
 }
 
-/** 替换 :param 为用户输入的值 */
+/** 替换 :param 为用户输入的值(只替换字符串字面量之外的,与 extractParams 对称) */
 function substituteParams(sql: string, values: Record<string, string>): string {
-  return sql.replace(/(?<!:):(\w+)/g, (full: string, name: string) => {
-    if (['true', 'false', 'null'].includes(name.toLowerCase())) return full
-    const v = values[name]
-    if (v === undefined) return full
-    if (/^-?\d+(\.\d+)?$/.test(v)) return v
-    return `'${v.replace(/'/g, "''")}'`
-  })
+  return sql
+    .split(/('[^']*')/g)
+    .map((seg) =>
+      seg.startsWith("'") && seg.endsWith("'") && seg.length >= 2
+        ? seg
+        : seg.replace(/(?<!:):(\w+)/g, (full: string, name: string) => {
+            if (['true', 'false', 'null'].includes(name.toLowerCase())) return full
+            const v = values[name]
+            if (v === undefined) return full
+            if (/^-?\d+(\.\d+)?$/.test(v)) return v
+            return `'${v.replace(/'/g, "''")}'`
+          }),
+    )
+    .join('')
 }
 
 function runWithParams() {
@@ -275,7 +282,9 @@ async function eqSave() {
     message.success('已保存,重新加载结果…')
     await store.runQuery(props.tab.id)
   } catch (e) {
-    message.error(String(e))
+    // 逐条提交、无跨条事务:失败时前面的 UPDATE/DELETE 已生效(重试幂等),
+    // 但 INSERT 可能已插入部分行,重试会重复——提示用户核对
+    message.error(`${e}(失败前已提交的修改已生效;如包含新增行,重试前请先核对表内数据)`)
   } finally {
     eqSaving.value = false
   }

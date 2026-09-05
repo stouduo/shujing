@@ -54,7 +54,8 @@ async function goto(hit: SearchHit) {
   if (!effectiveConn.value) return
   emit('update:show', false)
   await store.openTable(effectiveConn.value, { name: hit.table, kind: 'table' })
-  const tab = store.tabs[store.tabs.length - 1]
+  // openTable 去重激活已有标签时不一定在末尾,按激活 id 取
+  const tab = store.tabs.find((t) => t.id === store.activeTabId)
   if (tab?.kind === 'table') {
     tab.filters = [{ column: hit.column, op: 'LIKE', value: kw.value.trim() }]
     await store.applyFilters(tab.id)

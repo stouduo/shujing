@@ -23,6 +23,15 @@ export function locateByFingerprint(
   return rows.findIndex((row) => pkFingerprint(row, pkIdxs) === fingerprint)
 }
 
+/** Excel 单元格值:数字字符串转数字;超过 15 位有效数字的整数保持文本
+ *  (BIGINT/雪花 ID 转 Number 会丢末位精度,导出的 ID 查库就是错的) */
+export function excelCell(v: string | null): string | number | null {
+  if (v === null || v === '') return v
+  if (/^-?\d+$/.test(v)) return v.replace('-', '').length > 15 ? v : Number(v)
+  if (/^-?\d+\.\d+$/.test(v)) return Number(v)
+  return v
+}
+
 export function dbTypeOf(conn: ConnInfo | undefined, fallback: DbType = 'mysql'): DbType {
   return conn?.dbType ?? fallback
 }

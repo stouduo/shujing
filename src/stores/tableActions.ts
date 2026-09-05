@@ -301,7 +301,9 @@ export const tableActions = {
       await this.loadTableData(id)
       await this.loadTableCount(id)
     } catch (e) {
-      tab.error = String(e)
+      // 逐条提交、无跨条事务:失败时前面条目已生效(UPDATE/DELETE 重试幂等),
+      // 新增行可能已插入部分,重试前需核对
+      tab.error = `${e}(失败前已提交的修改已生效;如包含新增行,重试前请先核对表内数据)`
     } finally {
       tab.loading = false
     }

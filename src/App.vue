@@ -380,9 +380,10 @@ function onKeydown(e: KeyboardEvent) {
     window.dispatchEvent(new CustomEvent('result-search'))
     e.preventDefault()
   } else if (e.key === '?' && !mod) {
-    // 仅在非输入框时触发
-    const tag = (e.target as HTMLElement)?.tagName
-    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+    // 仅在非输入场景触发(含 CodeMirror 等 contenteditable 编辑器,否则 ? 字符被吞)
+    const t = e.target as HTMLElement
+    const tag = t?.tagName
+    if (!t?.isContentEditable && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
       e.preventDefault()
       showKeys.value = !showKeys.value
     }

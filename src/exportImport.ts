@@ -2,6 +2,7 @@
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
 import * as api from './api'
 import { useAppStore } from './stores/app'
+import { excelCell } from './stores/helpers'
 import type { DbType } from './types'
 
 function download(name: string, content: string | Blob) {
@@ -59,21 +60,27 @@ export async function exportTable(connId: string, table: string, fmt: TableFmt):
       '\n' +
       r.rows.map((row) => row.map((v) => esc(v ?? '')).join(',')).join('\n')
     const ok = await saveOrDownload(`${table}.csv`, text)
-    if (ok) window.$msg?.success(`已导出 CSV(${r.rows.length} 行)`)
+    if (ok)
+      window.$msg?.success(
+        r.truncated ? `已导出前 ${r.rows.length} 行(表较大,仅导出前 5 万行)` : `已导出 CSV(${r.rows.length} 行)`,
+      )
   } else {
     const { default: ExcelJS } = await import('exceljs')
     const wb = new ExcelJS.Workbook()
     const sheet = wb.addWorksheet(table.slice(0, 31))
     sheet.addRow(r.columns)
     for (const row of r.rows) {
-      sheet.addRow(row.map((v) => (v === null ? null : /^\d+(\.\d+)?$/.test(v) ? Number(v) : v)))
+      sheet.addRow(row.map(excelCell))
     }
     const buf = await wb.xlsx.writeBuffer()
     const ok = await saveOrDownload(
       `${table}.xlsx`,
       new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     )
-    if (ok) window.$msg?.success(`已导出 Excel(${r.rows.length} 行)`)
+    if (ok)
+      window.$msg?.success(
+        r.truncated ? `已导出前 ${r.rows.length} 行(表较大,仅导出前 5 万行)` : `已导出 Excel(${r.rows.length} 行)`,
+      )
   }
 }
 

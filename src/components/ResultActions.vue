@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { excelCell } from '../stores/helpers'
 import { NButton, useMessage } from 'naive-ui'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { isTauri, writeBinaryFile, writeTextFile } from '../api'
@@ -89,7 +90,7 @@ async function exportXlsx() {
   const sheet = wb.addWorksheet('data')
   sheet.addRow(props.result.columns)
   for (const r of props.result.rows) {
-    sheet.addRow(r.map((v) => (v === null ? null : /^\d+(\.\d+)?$/.test(v) ? Number(v) : v)))
+    sheet.addRow(r.map(excelCell))
   }
   // 表头加粗 + 列宽按内容自适应(采样前 300 行)
   sheet.getRow(1).font = { bold: true }
