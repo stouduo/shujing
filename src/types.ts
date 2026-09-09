@@ -158,6 +158,8 @@ export interface TableTab extends TabBase {
 export interface StructureTab extends TabBase {
   kind: 'structure'
   table: string
+  /** 表所属库(多库连接下定位结构查询上下文) */
+  database?: string | null
   data: TableStructure | null
   loading: boolean
   error: string | null
@@ -181,6 +183,8 @@ export interface DesignerTab extends TabBase {
   kind: 'designer'
   mode: 'create' | 'edit'
   tableName: string
+  /** 表所属库(多库连接下定位结构查询上下文) */
+  database?: string | null
   columns: ColumnSpec[]
   saving: boolean
   error: string | null

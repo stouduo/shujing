@@ -356,10 +356,10 @@ async function onMenuSelect(key: string | number) {
       store.openTable(t.connId, t.table, t.database)
       break
     case 'structure':
-      store.openStructure(t.connId, t.table.name)
+      store.openStructure(t.connId, t.table.name, t.database)
       break
     case 'design':
-      store.openDesigner(t.connId, t.table.name)
+      store.openDesigner(t.connId, t.table.name, t.database)
       break
     case 'copy':
       try {

@@ -12,6 +12,8 @@ const message = useMessage()
 const cols = computed(() => props.tab.data?.columns ?? [])
 const idxs = computed(() => props.tab.data?.indexes ?? [])
 const ddl = computed(() => props.tab.data?.ddl ?? '')
+/** DDL 块默认折叠:大表字段几百行,超长 DDL 会把字段区"淹没"(体感=字段不展示) */
+const ddlOpen = ref(false)
 
 function refresh() {
   if (props.tab.connId) store.loadStructure(props.tab.id)
@@ -95,7 +97,7 @@ async function beginEdit() {
       t.tableName === props.tab.table,
   )
   if (!d) {
-    await store.openDesigner(cid, props.tab.table)
+    await store.openDesigner(cid, props.tab.table, props.tab.database)
     d = store.tabs.find(
       (t) =>
         t.kind === 'designer' &&
@@ -290,9 +292,13 @@ function removeField(i: number) {
 
       <!-- DDL -->
       <div class="sec-block">
-        <div class="sec-head">DDL (建表语句)</div>
-        <pre v-if="ddl.trim()" class="ddl-pre mono" v-html="highlightDdl(ddl)"></pre>
-        <div v-else class="ddl-empty">当前连接类型不提供 DDL</div>
+        <div class="sec-head sec-toggle" @click="ddlOpen = !ddlOpen">
+          {{ ddlOpen ? '▾' : '▸' }} DDL (建表语句)
+        </div>
+        <template v-if="ddlOpen">
+          <pre v-if="ddl.trim()" class="ddl-pre mono" v-html="highlightDdl(ddl)"></pre>
+          <div v-else class="ddl-empty">当前连接类型不提供 DDL</div>
+        </template>
       </div>
     </div>
   </div>
@@ -391,6 +397,10 @@ function removeField(i: number) {
   color: var(--text);
   font-weight: 600;
 }
+.sec-toggle {
+  cursor: pointer;
+  user-select: none;
+}
 .ddl-pre {
   margin: 0;
   padding: 12px 14px;
@@ -403,6 +413,8 @@ function removeField(i: number) {
   word-break: break-all;
   color: var(--text);
   user-select: text;
+ max-height: 360px;
+  overflow: auto;
 }
 .ddl-pre :deep(.tk-kw) {
   color: #7cb8ff;

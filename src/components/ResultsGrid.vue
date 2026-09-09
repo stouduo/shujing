@@ -684,12 +684,15 @@ watch([start], () => {
   if (selEdit.value) commitSelEdit()
 })
 
-// 数据重查:选区与批量编辑失效,搜索态清空
+// 数据重查:选区与批量编辑失效,搜索态清空,滚动回顶部
+// (否则排序/翻页后滚动位置残留,# 列序号从中间开始,看起来像错位)
 watch(() => props.rows, () => {
   cellSel.value = null
   selEdit.value = null
   searchText.value = ''
   searchApplied.value = ''
+  if (scroller.value) scroller.value.scrollTop = 0
+  onScroll()
 })
 
 // ── 列头右键菜单 ──────────────────────────────────────

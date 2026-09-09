@@ -101,13 +101,14 @@ export const PANE_DEFS: PaneDef[] = [
     kind: 'structure',
     icon: 'list',
     component: defineAsyncComponent(() => import('../components/StructurePane.vue')),
-    serialize: (t) => (t.kind === 'structure' ? { table: t.table } : null),
+    serialize: (t) => (t.kind === 'structure' ? { table: t.table, database: t.database ?? null } : null),
     revive: (st) => ({
       kind: 'structure',
       id: str(st.id),
       title: str(st.title, `${str(st.table)} 结构`),
       connId: nstr(st.connId),
       table: str(st.table),
+      database: nstr(st.database),
       data: null,
       loading: true,
       error: null,
@@ -118,7 +119,9 @@ export const PANE_DEFS: PaneDef[] = [
     icon: 'pencil',
     component: defineAsyncComponent(() => import('../components/TableDesigner.vue')),
     serialize: (t) =>
-      t.kind === 'designer' ? { mode: t.mode, tableName: t.tableName, columns: t.columns } : null,
+      t.kind === 'designer'
+        ? { mode: t.mode, tableName: t.tableName, columns: t.columns, database: t.database ?? null }
+        : null,
     revive: (st) => ({
       kind: 'designer',
       id: str(st.id),
@@ -126,6 +129,7 @@ export const PANE_DEFS: PaneDef[] = [
       connId: nstr(st.connId),
       mode: st.mode === 'edit' ? 'edit' : 'create',
       tableName: str(st.tableName),
+      database: nstr(st.database),
       columns: Array.isArray(st.columns) ? st.columns : [],
       saving: false,
       error: null,

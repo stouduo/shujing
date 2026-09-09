@@ -187,6 +187,7 @@ export const useAppStore = defineStore('app', {
     async reloadDesignerColumns(id: string) {
       const tab = this.tabs.find((t) => t.id === id)
       if (!tab || tab.kind !== 'designer' || !tab.connId) return
+      await this.switchContext(tab.connId, (tab as { database?: string | null }).database ?? null)
       try {
         const st = await api.getTableStructure(tab.connId, tab.tableName)
         tab.columns = columnsFromStructure(st)
@@ -402,10 +403,15 @@ export const useAppStore = defineStore('app', {
     },
 
 
-    async openStructure(connId: string, table: string) {
-      // 去重:同连接同表的结构页已打开则定位
+    async openStructure(connId: string, table: string, database?: string | null) {
+      const dbKey = database ?? null
+      // 去重:同连接同库同表的结构页已打开则定位
       const existing = this.tabs.find(
-        (t) => t.kind === 'structure' && t.connId === connId && t.table === table,
+        (t) =>
+          t.kind === 'structure' &&
+          t.connId === connId &&
+          t.table === table &&
+          (t.database ?? null) === dbKey,
       )
       if (existing) {
         this.activeTabId = existing.id
@@ -418,6 +424,7 @@ export const useAppStore = defineStore('app', {
         title: `${table} 结构`,
         connId,
         table,
+        database: dbKey,
         data: null,
         loading: false,
         error: null,
@@ -433,6 +440,8 @@ export const useAppStore = defineStore('app', {
         tab.error = '连接不可用'
         return
       }
+      // 多库连接:结构查询依赖会话当前库,先切到表所属库
+      await this.switchContext(tab.connId, tab.database)
       tab.loading = true
       tab.error = null
       try {

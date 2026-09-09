@@ -241,7 +241,7 @@ function clearFiltersGuarded() {
 }
 
 function openStructure() {
-  if (props.tab.connId) store.openStructure(props.tab.connId, props.tab.table)
+  if (props.tab.connId) store.openStructure(props.tab.connId, props.tab.table, props.tab.database)
 }
 
 // ── 筛选值候选(该列 DISTINCT) ──────────────────────
@@ -326,6 +326,9 @@ function onFilterCol(col: string, op = '=') {
       <div class="seg-group">
         <n-button size="small" quaternary title="刷新 (F5)" @click="refresh">
           <Icon name="refresh" :size="13" />
+        </n-button>
+        <n-button size="small" quaternary title="搜索内容 (⌘F)" @click="gridRef?.openSearch()">
+          <Icon name="search" :size="13" /> 搜索
         </n-button>
         <n-button size="small" quaternary title="查看表结构" @click="openStructure">
           <Icon name="list" :size="13" /> 结构

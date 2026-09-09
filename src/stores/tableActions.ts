@@ -12,19 +12,23 @@ type Store = any
 export const tableActions = {
   /** 表操作前把会话上下文切到表所属库(多库连接防跨库误查/误写) */
   async ensureTableContext(this: Store, tab: TableTab) {
-    const cid = tab.connId
-    if (!cid || !tab.database || !this.lastDbs) return
-    if (this.lastDbs[cid] === tab.database) return
+    await this.switchContext(tab.connId, tab.database)
+  },
+
+  /** 把会话上下文切到指定库(结构页/设计器等非 TableTab 也要用) */
+  async switchContext(this: Store, cid: string | null | undefined, database: string | null | undefined) {
+    if (!cid || !database || !this.lastDbs) return
+    if (this.lastDbs[cid] === database) return
     const conn = this.connById(cid)
     if (!conn || (conn.dbType !== 'mysql' && conn.dbType !== 'postgres')) return
     try {
       await api.runSql(
         cid,
         conn.dbType === 'mysql'
-          ? 'USE `' + tab.database.replace(/`/g, '``') + '`'
-          : 'SET search_path TO "' + tab.database.replace(/"/g, '""') + '"',
+          ? 'USE `' + database.replace(/`/g, '``') + '`'
+          : 'SET search_path TO "' + database.replace(/"/g, '""') + '"',
       )
-      this.rememberLastDb(cid, tab.database)
+      this.rememberLastDb(cid, database)
     } catch {
       /* 库可能已删除;具体语句会自己报错 */
     }

@@ -10,7 +10,7 @@ import type { ColumnSpec } from '../types'
 type Store = any
 
 export const designerActions = {
-  async openDesigner(this: Store, connId: string, table?: string) {
+  async openDesigner(this: Store, connId: string, table?: string, database?: string | null) {
     if (!this.live[connId]) await this.connect(connId)
     const id = this.nextId()
     if (table) {
@@ -21,12 +21,14 @@ export const designerActions = {
         title: `设计 ${table}`,
         connId,
         tableName: table,
+        database: database ?? null,
         columns: [],
         saving: false,
         error: null,
         info: null,
       })
-      // 拉现有结构转列定义
+      // 拉现有结构转列定义(先切到表所属库)
+      await this.switchContext(connId, database ?? null)
       try {
         const st = await api.getTableStructure(connId, table)
         const tab = this.tabs.find((t: { id: string; kind: string }) => t.id === id)
@@ -43,6 +45,7 @@ export const designerActions = {
         title: `新表 ${this.tabSeq}`,
         connId,
         tableName: '',
+        database: database ?? null,
         columns: [
           { name: 'id', dataType: 'INTEGER', length: '', nullable: false, pk: true, autoInc: true, default: '', comment: '' },
         ],
@@ -136,6 +139,7 @@ export const designerActions = {
     tab.saving = true
     tab.error = null
     tab.info = null
+    await this.switchContext(tab.connId, (tab as { database?: string | null }).database ?? null)
     try {
       if (create) {
         await api.runSql(tab.connId, create, 1)
