@@ -1064,12 +1064,13 @@ defineExpose({
 .inner {
   position: relative;
 }
-/* 表头:垂直 sticky 贴顶;display:block,单元格与数据行同为绝对定位模型 */
+/* 表头:垂直 sticky 贴顶;flex 容器——冻结格是流内 flex 项横向排列
+   (block 容器会让流内冻结格纵向堆叠,# 压到第一行数据上) */
 .head {
   position: sticky;
   top: 0;
   z-index: 3;
-  display: block;
+  display: flex;
   height: var(--row-h);
   background: var(--bg-head);
   border-bottom: 1px solid var(--border-strong);
@@ -1077,8 +1078,8 @@ defineExpose({
 }
 .row {
   position: relative;
-  display: block;
-  /* 行宽 = 全部列宽;单元格绝对定位,横向滚动仅合成器平移 */
+  display: flex;
+  /* 行宽 = 全部列宽;数据格绝对定位,冻结格为流内 flex 项(横向排列) */
   width: max-content;
   min-width: 100%;
   height: var(--row-h);
