@@ -782,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "dbclient"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "mysql_async",
  "redis",
