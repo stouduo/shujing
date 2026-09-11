@@ -672,7 +672,7 @@ mod tests {
         assert!(tables.iter().any(|t| t.name == "t1" && t.kind == "table"));
 
         // 结构:主键 / 索引 / DDL
-        let s = b.get_table_structure(&info, "t1").await.unwrap();
+        let s = b.get_table_structure(&info, "t1", None).await.unwrap();
         assert_eq!(s.columns.len(), 3);
         assert_eq!(s.columns[0].key, "PRI");
         assert!(s.indexes.iter().any(|i| i.name == "idx_name" && !i.unique));
@@ -782,7 +782,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let fks = b.list_foreign_keys(&info).await.unwrap();
+        let fks = b.list_foreign_keys(&info, None).await.unwrap();
         assert_eq!(fks.len(), 1);
         assert_eq!(fks[0].table, "b");
         assert_eq!(fks[0].column, "a_id");
