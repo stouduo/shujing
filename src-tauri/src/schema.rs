@@ -638,12 +638,18 @@ async fn resolve_mysql_db(
     cur.ok_or_else(|| "连接未指定数据库,请先在左侧选择要操作的库".to_string())
 }
 
-    pub async fn get_table_structure(&mut self, info: &ConnInfo, table: &str) -> Result<TableStructure, String> {
+    pub async fn get_table_structure(
+        &mut self,
+        info: &ConnInfo,
+        table: &str,
+        database: Option<&str>,
+    ) -> Result<TableStructure, String> {
         match self {
             Backend::Sqlite(conn) => struct_sqlite(conn, table),
             Backend::MySql(mp) => {
                 let mut conn = Backend::mysql_conn(mp).await?;
-                let db = Self::resolve_mysql_db(&mut conn, info, None).await?;
+                // 显式 database 最高优先:多库连接下表可能不在连接配置的默认库
+                let db = Self::resolve_mysql_db(&mut conn, info, database).await?;
                 struct_mysql(&mut conn, &db, table).await
             }
             Backend::Pg(mp) => {
@@ -669,12 +675,16 @@ async fn resolve_mysql_db(
         }
     }
 
-    pub async fn list_foreign_keys(&mut self, info: &ConnInfo) -> Result<Vec<FkMeta>, String> {
+    pub async fn list_foreign_keys(
+        &mut self,
+        info: &ConnInfo,
+        database: Option<&str>,
+    ) -> Result<Vec<FkMeta>, String> {
         match self {
             Backend::Sqlite(conn) => fk_sqlite(conn),
             Backend::MySql(mp) => {
                 let mut conn = Backend::mysql_conn(mp).await?;
-                let db = Self::resolve_mysql_db(&mut conn, info, None).await?;
+                let db = Self::resolve_mysql_db(&mut conn, info, database).await?;
                 fk_mysql(&mut conn, &db).await
             }
             Backend::Pg(mp) => {

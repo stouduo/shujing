@@ -103,22 +103,27 @@ async fn get_table_structure(
     state: State<'_, AppState>,
     id: String,
     table: String,
+    database: Option<String>,
 ) -> Result<TableStructure, String> {
     let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
-    guard.backend.get_table_structure(&info, &table).await
+    guard
+        .backend
+        .get_table_structure(&info, &table, database.as_deref())
+        .await
 }
 
 #[tauri::command]
 async fn list_foreign_keys(
     state: State<'_, AppState>,
     id: String,
+    database: Option<String>,
 ) -> Result<Vec<schema::FkMeta>, String> {
     let live = state.inner().live(&id).ok_or("连接未建立或已断开")?;
     let mut guard = live.lock().await;
     let info = guard.info.clone();
-    guard.backend.list_foreign_keys(&info).await
+    guard.backend.list_foreign_keys(&info, database.as_deref()).await
 }
 
 /// 构建单表 SQL 文本(结构 + 可选数据)
@@ -147,7 +152,7 @@ async fn build_table_dump(
     let mut out = String::new();
     out.push_str(&format!("-- 数镜 dump: table {qt}\n"));
     // 建表语句:SQLite/MySQL 用原生 DDL,PG 简化合成
-    match backend.get_table_structure(info, table).await {
+    match backend.get_table_structure(info, table, None).await {
         Ok(st) if !st.ddl.is_empty() => {
             out.push_str(&st.ddl.trim_end_matches(';'));
             out.push_str(";\n\n");

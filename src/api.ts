@@ -37,11 +37,12 @@ export const listDatabases = (id: string) => call<string[]>('list_databases', { 
 export const listTables = (id: string, database?: string) =>
   call<TableMeta[]>('list_tables', { id, database })
 
-export const getTableStructure = (id: string, table: string) =>
-  call<TableStructure>('get_table_structure', { id, table })
+export const getTableStructure = (id: string, table: string, database?: string | null) =>
+  call<TableStructure>('get_table_structure', { id, table, database: database ?? null })
 
 
-export const listForeignKeys = (id: string) => call<FkMeta[]>('list_foreign_keys', { id })
+export const listForeignKeys = (id: string, database?: string | null) =>
+  call<FkMeta[]>('list_foreign_keys', { id, database: database ?? null })
 
 export const getObjectDdl = (id: string, kind: string, name: string) =>
   call<string>('get_object_ddl', { id, kind, name })

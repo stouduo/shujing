@@ -44,7 +44,7 @@ pub async fn search_tables(
             break;
         }
         // 拉列结构构建 OR 条件(每表最多取 5 条命中)
-        let st = match backend.get_table_structure(info, &t.name).await {
+        let st = match backend.get_table_structure(info, &t.name, None).await {
             Ok(s) => s,
             Err(_) => continue,
         };
