@@ -187,8 +187,13 @@ const editableQuery = computed<string | null>(() => {
 const eqPkCols = ref<string[]>([])
 const pkLoadedKey = ref('')
 const eqColComments = ref<Record<string, string>>({})
-const eqChanges = ref<Record<number, Record<string, string | null>>>({})
-const eqDeleted = ref<Record<number, true>>({})
+// KeepAlive 挤出销毁时组件状态会丢:未保存修改同步到 store 标签,重建时恢复
+const eqChanges = ref<Record<number, Record<string, string | null>>>(props.tab.eqChanges ?? {})
+const eqDeleted = ref<Record<number, true>>(props.tab.eqDeleted ?? {})
+watch([eqChanges, eqDeleted], () => {
+  props.tab.eqChanges = eqChanges.value
+  props.tab.eqDeleted = eqDeleted.value
+}, { deep: true })
 const eqSaving = ref(false)
 
 /** 可编辑条件:识别出单表 SELECT 且表有主键,且结果集包含全部主键列(否则无法定位行) */

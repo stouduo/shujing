@@ -111,6 +111,9 @@ export interface QueryTab extends TabBase {
   activeSet: number
   error: string | null
   running: boolean
+  /** 可编辑结果集的未保存修改(KeepAlive 挤出重建后恢复,不入会话) */
+  eqChanges?: Record<number, Record<string, string | null>>
+  eqDeleted?: Record<number, true>
 }
 
 export interface TableFilter {
