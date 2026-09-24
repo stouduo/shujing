@@ -353,6 +353,19 @@ watch(
 // 标签图标由 Pane Registry 提供(新增面板类型自动生效)
 const tabIconOf = (kind: string): IconName => paneOf(kind)?.icon ?? 'code'
 
+// ── 窗口底色跟随主题(切窗口/最小化返回时 WKWebView 重绘露出的是底色,
+//    默认白色,深色主题下每次切换都白屏闪烁) ──────────────
+async function syncWindowBg() {
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().setBackgroundColor(theme.value === 'dark' ? '#0e0f11' : '#f7f7f8')
+  } catch {
+    /* 旧版 tauri 无此 API,忽略 */
+  }
+}
+watch(theme, () => void syncWindowBg())
+void syncWindowBg()
+
 // ── 全局快捷键 ────────────────────────────────────────
 function onKeydown(e: KeyboardEvent) {
   const mod = e.metaKey || e.ctrlKey
@@ -537,8 +550,9 @@ function openEdit(info: ConnInfo) {
               <div class="tabbar-spacer" data-tauri-drag-region />
             </div>
             <div v-if="activeTab" class="tab-content" :key="activeTab.id">
-              <!-- KeepAlive:切换标签不销毁重建,滚动位置/编辑态保留(最多缓存 12 个) -->
-              <KeepAlive :max="12">
+              <!-- KeepAlive:切换标签不销毁重建,滚动位置/编辑态保留。
+     缓存数与内存成正比(每标签 retaining 一棵 DOM 树+编辑器实例),6 个足够覆盖日常切换 -->
+              <KeepAlive :max="6">
                 <EditorTab :key="activeTab.id" :tab="activeTab" />
               </KeepAlive>
             </div>
