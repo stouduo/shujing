@@ -691,7 +691,12 @@ watch(() => props.rows, () => {
   selEdit.value = null
   searchText.value = ''
   searchApplied.value = ''
-  if (scroller.value) scroller.value.scrollTop = 0
+  // 回顶必须瞬时:smooth 会播放滚动动画,动画期每帧 scroll 事件触发重渲染(卡顿感)
+  if (scroller.value) {
+    scroller.value.style.scrollBehavior = 'auto'
+    scroller.value.scrollTop = 0
+    scroller.value.style.scrollBehavior = ''
+  }
   onScroll()
 })
 

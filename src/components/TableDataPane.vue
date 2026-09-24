@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { pkFingerprint, locateByFingerprint } from '../stores/helpers'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch, onUnmounted } from 'vue'
 import { NButton, NInput, NPopover, NSelect, NSpin, useMessage } from 'naive-ui'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import * as api from '../api'
@@ -81,10 +81,12 @@ const showAddModal = ref(false)
 // ── 列显示选择(实际状态由 ResultsGrid 内部管理并持久化) ──
 const gridRef = ref<InstanceType<typeof ResultsGrid> | null>(null)
 
-// ⌘F 结果搜索
-onMounted(() => {
-  window.addEventListener('result-search', () => gridRef.value?.openSearch())
-})
+// ⌘F 结果搜索(监听器必须随组件销毁移除,否则闭包持有已淘汰标签的整棵组件树)
+function onResultSearch() {
+  gridRef.value?.openSearch()
+}
+onMounted(() => window.addEventListener('result-search', onResultSearch))
+onUnmounted(() => window.removeEventListener('result-search', onResultSearch))
 
 // 行高:紧凑/舒适(按表记忆)
 const rowhKey = computed(() => `dblens_rowh:${props.tab.connId ?? ''}/${props.tab.table}`)
