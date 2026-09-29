@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, ref, watch, onUnmounted } from 'vue'
+import { computed, defineAsyncComponent, inject, ref, watch, onUnmounted, onActivated } from 'vue'
 import { NButton, NDropdown, NInput, NSelect, NSplit, useMessage, type DropdownOption } from 'naive-ui'
 import * as api from '../api'
 import { useAppStore } from '../stores/app'
@@ -446,6 +446,25 @@ const viewResult = computed(() => {
     if (identity) return r
   }
   return { ...r, rows: idx.map((i) => r.rows[i]), truncated: false }
+})
+
+// ── 后台标签卸载结果:内存封顶 ────────────────────────
+// 非激活的查询标签释放结果集(读语句激活时自动重跑;写语句绝不自动
+// 重执,保留结果防误操作);有未保存修改的标签保留
+let resultsDropped = false
+watch(() => store.activeTabId, (id) => {
+  if (id === props.tab.id) return
+  if (Object.keys(eqChanges.value).length || Object.keys(eqDeleted.value).length) return
+  const isRead = /^(select|with|show|explain|desc\b)/i.test(props.tab.lastSql ?? '')
+  if (!isRead || !props.tab.results.length) return
+  resultsDropped = true
+  props.tab.results = []
+})
+onActivated(() => {
+  if (resultsDropped) {
+    resultsDropped = false
+    void store.runQuery(props.tab.id)
+  }
 })
 
 // 新结果到达:重置二次加工输入与视图

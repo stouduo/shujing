@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { pkFingerprint, locateByFingerprint } from '../stores/helpers'
-import { computed, onMounted, ref, watch, onUnmounted } from 'vue'
+import { computed, onMounted, ref, watch, onUnmounted, onActivated } from 'vue'
 import { NButton, NInput, NPopover, NSelect, NSpin, useMessage } from 'naive-ui'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import * as api from '../api'
@@ -214,6 +214,28 @@ function guardUnsaved(fn: () => void) {
     onPositiveClick: () => fn(),
   })
 }
+
+// ── 后台标签卸载数据:内存封顶的关键 ──────────────────
+// 多标签 + 大表(宽表/大行)时,每个标签驻留的结果集是内存大头且随
+// 标签数线性涨。非激活标签释放结果(激活时自动重载);有未保存修改的
+// 标签保留数据(防静默丢失)
+let droppedOnSwitch = false
+watch(() => store.activeTabId, (id) => {
+  if (id === props.tab.id) return
+  const c = store.changeCount(props.tab.id)
+  if (c.edits + c.deletes + c.inserts > 0) return
+  if (props.tab.result) {
+    droppedOnSwitch = true
+    props.tab.result = null
+  }
+})
+onActivated(() => {
+  if (droppedOnSwitch && props.tab.connId) {
+    droppedOnSwitch = false
+    store.loadTableData(props.tab.id)
+    store.loadTableCount(props.tab.id)
+  }
+})
 
 function refresh() {
   guardUnsaved(() => {

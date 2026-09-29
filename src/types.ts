@@ -111,6 +111,8 @@ export interface QueryTab extends TabBase {
   activeSet: number
   error: string | null
   running: boolean
+  /** 最近一次实际执行的 SQL(后台释放结果后,激活时据此安全重跑读语句) */
+  lastSql?: string
   /** 可编辑结果集的未保存修改(KeepAlive 挤出重建后恢复,不入会话) */
   eqChanges?: Record<number, Record<string, string | null>>
   eqDeleted?: Record<number, true>
