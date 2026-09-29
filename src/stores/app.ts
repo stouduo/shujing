@@ -39,6 +39,8 @@ export const useAppStore = defineStore('app', {
     snippets: [] as { id: string; name: string; sql: string }[],
     /** 每个连接最近使用的库(键 connId),重启重连后自动恢复上下文 */
     lastDbs: {} as Record<string, string>,
+    /** 最近活跃的标签 id(前 3 个的标签数据驻留内存,更久的自动卸载) */
+    recentTabs: [] as string[],
   }),
   getters: {
     connById: (state) => (id: string): ConnInfo | undefined =>
@@ -324,6 +326,11 @@ export const useAppStore = defineStore('app', {
     pushTab(tab: Tab) {
       this.tabs.push(tab)
       this.activeTabId = tab.id
+    },
+
+    /** 标记最近活跃标签(LRU 头部,最多保留 3 个的数据驻留内存) */
+    markRecentTab(id: string) {
+      this.recentTabs = [id, ...this.recentTabs.filter((x) => x !== id)].slice(0, 3)
     },
 
     nextId(): string {

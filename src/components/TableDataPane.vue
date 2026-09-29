@@ -221,20 +221,26 @@ function guardUnsaved(fn: () => void) {
 // 标签保留数据(防静默丢失)
 let droppedOnSwitch = false
 watch(() => store.activeTabId, (id) => {
-  if (id === props.tab.id) return
+  if (id === props.tab.id) {
+    store.markRecentTab(props.tab.id)
+    if (droppedOnSwitch && props.tab.connId) {
+      droppedOnSwitch = false
+      store.loadTableData(props.tab.id)
+      store.loadTableCount(props.tab.id)
+    }
+    return
+  }
+  // 刚活跃过的前 3 个标签数据驻留(来回切换零开销),更久的自动卸载
   const c = store.changeCount(props.tab.id)
   if (c.edits + c.deletes + c.inserts > 0) return
+  if (store.recentTabs.includes(props.tab.id)) return
   if (props.tab.result) {
     droppedOnSwitch = true
     props.tab.result = null
   }
 })
 onActivated(() => {
-  if (droppedOnSwitch && props.tab.connId) {
-    droppedOnSwitch = false
-    store.loadTableData(props.tab.id)
-    store.loadTableCount(props.tab.id)
-  }
+  store.markRecentTab(props.tab.id)
 })
 
 function refresh() {

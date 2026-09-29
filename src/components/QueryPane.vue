@@ -453,18 +453,24 @@ const viewResult = computed(() => {
 // 重执,保留结果防误操作);有未保存修改的标签保留
 let resultsDropped = false
 watch(() => store.activeTabId, (id) => {
-  if (id === props.tab.id) return
+  if (id === props.tab.id) {
+    store.markRecentTab(props.tab.id)
+    if (resultsDropped) {
+      resultsDropped = false
+      void store.runQuery(props.tab.id)
+    }
+    return
+  }
+  // LRU 之外 + 只读语句 + 无未保存修改 → 释放结果(写语句绝不自动重执)
   if (Object.keys(eqChanges.value).length || Object.keys(eqDeleted.value).length) return
+  if (store.recentTabs.includes(props.tab.id)) return
   const isRead = /^(select|with|show|explain|desc\b)/i.test(props.tab.lastSql ?? '')
   if (!isRead || !props.tab.results.length) return
   resultsDropped = true
   props.tab.results = []
 })
 onActivated(() => {
-  if (resultsDropped) {
-    resultsDropped = false
-    void store.runQuery(props.tab.id)
-  }
+  store.markRecentTab(props.tab.id)
 })
 
 // 新结果到达:重置二次加工输入与视图
