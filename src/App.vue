@@ -310,6 +310,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       ['⌘T / ⌘W', '新建 / 关闭标签'],
       ['⌘1-9', '切换到第 N 个标签'],
       ['F5', '刷新 / 重跑'],
+      ['⌘⇧R', '重置界面内存(界面重载,数据无损)'],
     ],
   },
   {
@@ -378,6 +379,11 @@ function onKeydown(e: KeyboardEvent) {
   } else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') {
     e.preventDefault()
     showGlobalSearch.value = !showGlobalSearch.value
+  } else if (mod && e.shiftKey && e.key.toLowerCase() === 'r') {
+    // 重置界面内存:WKWebView 的 JS 堆只增不减,长期使用后重载即归零
+    // (标签/连接状态全在会话里,reload 无损)
+    e.preventDefault()
+    location.reload()
   } else if (mod && e.key.toLowerCase() === 'w') {
     e.preventDefault()
     if (store.activeTabId && !pinnedTabs.value.has(store.activeTabId)) {
